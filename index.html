@@ -51,7 +51,11 @@
     </div>
 
     <div class="editor-section">
-      <div class="section-title">글씨 크기</div>
+      <div class="section-toggle-header" onclick="toggleSection('sizeBody',this)">
+        <span class="section-title" style="margin-bottom:0">글씨 크기</span>
+        <span class="section-arrow">▾</span>
+      </div>
+      <div id="sizeBody" class="section-body" style="display:none">
       <div class="size-row">
         <div class="size-item">
           <label>메인 제목 <span id="vTitle" class="size-val">76</span>px</label>
@@ -60,6 +64,10 @@
         <div class="size-item">
           <label>카테고리 <span id="vCat" class="size-val">30</span>px</label>
           <input type="range" min="14" max="60" value="30" id="fsCat" oninput="onSize('cat',this)">
+        </div>
+        <div class="size-item">
+          <label>부제목 <span id="vSub" class="size-val">14</span>px</label>
+          <input type="range" min="9" max="28" value="14" id="fsSub" oninput="onSize('sub',this)">
         </div>
         <div class="size-item">
           <label>메뉴명 <span id="vName" class="size-val">26</span>px</label>
@@ -73,6 +81,7 @@
           <label>가격 <span id="vPrice" class="size-val">13</span>px</label>
           <input type="range" min="9" max="22" value="13" id="fsPrice" oninput="onSize('price',this)">
         </div>
+      </div>
       </div>
     </div>
 

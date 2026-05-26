@@ -33,6 +33,13 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .add-btn{margin:12px 16px;width:calc(100% - 32px);background:#e2a96f;border:none;color:#fff;padding:10px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
 .add-btn:hover{background:#d4924f}
 
+/* SECTION TOGGLE */
+.section-toggle-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:2px 0}
+.section-toggle-header:hover .section-title{color:#e2a96f}
+.section-arrow{font-size:11px;color:#aaa;transition:transform .2s}
+.section-arrow.open{transform:rotate(180deg)}
+.section-body{padding-top:10px}
+
 /* FONT SIZE */
 .size-row{display:flex;flex-direction:column;gap:8px}
 .size-item label{display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:3px}

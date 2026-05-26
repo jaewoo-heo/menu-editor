@@ -1,6 +1,14 @@
 // GitHub Actions 배포 시 Secrets의 키로 자동 치환됨
 const BUILTIN_KEY = 'PIXABAY_KEY_PLACEHOLDER';
 
+function toggleSection(bodyId, header) {
+  const body  = document.getElementById(bodyId);
+  const arrow = header.querySelector('.section-arrow');
+  const open  = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  arrow.classList.toggle('open', open);
+}
+
 // ── 한글 → 영어 번역 사전 ───────────────────────────────────────
 const KO_EN = {
   // ── 커피 ──
@@ -84,7 +92,7 @@ const S = {
   layout: 'coffee',
   bg: '#F5EFE6',
   font: "'Playfair Display',serif",
-  fs: { title: 76, cat: 30, name: 26, desc: 13, price: 13 },
+  fs: { title: 76, cat: 30, sub: 14, name: 26, desc: 13, price: 13 },
   pages: [
     {
       id: 1,
@@ -144,7 +152,7 @@ function setLayout(l, btn) {
 // ── 글씨 크기 ────────────────────────────────────────────────────
 function onSize(key, input) {
   S.fs[key] = Number(input.value);
-  const labelMap = { title:'vTitle', cat:'vCat', name:'vName', desc:'vDesc', price:'vPrice' };
+  const labelMap = { title:'vTitle', cat:'vCat', sub:'vSub', name:'vName', desc:'vDesc', price:'vPrice' };
   document.getElementById(labelMap[key]).textContent = input.value;
   renderPreview();
 }
@@ -359,7 +367,7 @@ function tplCoffee(cat, title, sub, items) {
     </div>`).join('');
   return `<div class="m-cat" style="font-size:${S.fs.cat}px">${cat}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-          ${sub ? `<div class="m-sub">${sub}</div>` : ''}
+          ${sub ? `<div class="m-sub" style="font-size:${S.fs.sub}px">${sub}</div>` : ''}
           <hr class="m-divider">${rows}`;
 }
 
@@ -378,7 +386,7 @@ function tplModern(cat, title, sub, items) {
     </div>`).join('');
   return `<div class="m-cat" style="font-size:${S.fs.cat*0.4}px">${cat}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-          <div class="m-sub">${sub}</div>
+          <div class="m-sub" style="font-size:${S.fs.sub}px">${sub}</div>
           <hr class="m-divider">
           <div class="m-grid">${rows}</div>`;
 }
@@ -400,7 +408,7 @@ function tplElegant(cat, title, sub, items) {
     </div>`).join('');
   return `<div class="m-cat" style="font-size:${S.fs.cat*0.38}px">${cat}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-          <div class="m-sub">${sub}</div>
+          <div class="m-sub" style="font-size:${S.fs.sub}px">${sub}</div>
           <div class="m-divider"><span class="m-div-orn">✦</span></div>
           ${rows}`;
 }
