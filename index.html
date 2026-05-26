@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>메뉴판 에디터</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Noto+Serif+KR:wght@300;400;700&family=Inter:wght@300;400;500;600&family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="toolbar-logo">메뉴판 에디터</div>
+  <div class="toolbar-group">
+    <span class="toolbar-label">레이아웃</span>
+    <button class="layout-btn active" data-layout="coffee" onclick="setLayout('coffee',this)">☕ 카페</button>
+    <button class="layout-btn" data-layout="modern" onclick="setLayout('modern',this)">◼ 모던</button>
+    <button class="layout-btn" data-layout="elegant" onclick="setLayout('elegant',this)">✦ 엘레강스</button>
+    <button class="layout-btn" data-layout="chalk" onclick="setLayout('chalk',this)">📝 칠판</button>
+  </div>
+  <div class="toolbar-group">
+    <span class="toolbar-label">배경색</span>
+    <div id="bgSwatches" class="bg-swatches"></div>
+    <input type="color" id="bgCustom" class="bg-custom" title="커스텀 색상" onchange="setCustomBg(this.value)">
+  </div>
+  <button class="pdf-btn" onclick="exportPDF()">PDF 출력</button>
+</div>
+
+<div class="main-content">
+  <!-- EDITOR -->
+  <div class="editor-panel">
+    <div class="editor-section">
+      <div class="section-title">메뉴판 헤더</div>
+      <div class="form-group"><label>카테고리</label><input id="eCategory" value="special" oninput="renderPreview()"></div>
+      <div class="form-group"><label>메인 제목</label><input id="eTitle" value="COFFEE" oninput="renderPreview()"></div>
+      <div class="form-group"><label>부제목</label><input id="eSubtitle" value="Our signature drinks" oninput="renderPreview()"></div>
+    </div>
+    <div class="editor-section">
+      <div class="section-title">폰트</div>
+      <div class="form-group">
+        <select id="eFont" onchange="renderPreview()">
+          <option value="'Playfair Display',serif">Playfair Display (클래식)</option>
+          <option value="'Inter',sans-serif">Inter (모던)</option>
+          <option value="'Noto Serif KR',serif">Noto Serif KR (한국어)</option>
+          <option value="'Dancing Script',cursive">Dancing Script (손글씨)</option>
+        </select>
+      </div>
+    </div>
+    <div class="editor-section" style="border-bottom:none">
+      <div class="section-title">메뉴 아이템</div>
+    </div>
+    <div id="itemsList"></div>
+    <button class="add-btn" onclick="addItem()">+ 메뉴 추가</button>
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="preview-panel">
+    <div class="preview-scaler">
+      <div id="menuPreview"></div>
+    </div>
+  </div>
+</div>
+
+<!-- IMAGE MODAL -->
+<div id="imgModal" class="modal-overlay" style="display:none" onclick="overlayClose(event)">
+  <div class="modal">
+    <div class="modal-title">이미지 선택</div>
+    <div class="modal-tabs">
+      <button class="mtab active" onclick="switchTab('search',this)">이미지 검색</button>
+      <button class="mtab" onclick="switchTab('url',this)">URL 입력</button>
+      <button class="mtab" onclick="switchTab('upload',this)">파일 업로드</button>
+    </div>
+    <!-- Search -->
+    <div class="tab-pane active" id="tab-search">
+      <div class="search-row">
+        <input id="searchQ" class="search-input" placeholder="검색어 입력 (예: latte, espresso, cake)">
+        <button class="search-btn" onclick="doSearch()">검색</button>
+      </div>
+      <div id="imgGrid" class="img-grid"></div>
+    </div>
+    <!-- URL -->
+    <div class="tab-pane" id="tab-url">
+      <div class="search-row">
+        <input id="urlInput" class="search-input" placeholder="이미지 URL 붙여넣기">
+        <button class="search-btn" onclick="previewUrl()">미리보기</button>
+      </div>
+      <img id="urlPreviewImg" style="display:none;max-height:150px;border-radius:8px;margin-top:8px;object-fit:cover;width:100%">
+    </div>
+    <!-- Upload -->
+    <div class="tab-pane" id="tab-upload">
+      <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+        <div style="font-size:36px;margin-bottom:8px">📁</div>
+        <div>클릭하거나 파일을 드래그하여 업로드</div>
+        <div style="font-size:11px;color:#aaa;margin-top:4px">JPG, PNG, WEBP 지원</div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleUpload(this)">
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">취소</button>
+      <button class="btn-confirm" onclick="confirmImage()">선택 완료</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
