@@ -1,3 +1,6 @@
+// GitHub Actions 배포 시 Secrets의 키로 자동 치환됨
+const BUILTIN_KEY = 'PIXABAY_KEY_PLACEHOLDER';
+
 // ── 한글 → 영어 번역 사전 ───────────────────────────────────────
 const KO_EN = {
   // ── 커피 ──
@@ -539,7 +542,10 @@ async function doSearch() {
   grid.innerHTML = Array(9).fill('<div class="img-skeleton"></div>').join('');
   await new Promise(r => setTimeout(r, 250));
 
-  const pixabayKey = localStorage.getItem('pixabay_key') || '';
+  // Actions 배포 키 우선, 없으면 localStorage의 직접 입력 키 사용
+  const pixabayKey = (BUILTIN_KEY && BUILTIN_KEY !== 'PIXABAY_KEY_PLACEHOLDER')
+    ? BUILTIN_KEY
+    : (localStorage.getItem('pixabay_key') || '');
   if (pixabayKey) {
     await searchPixabay(q, grid, pixabayKey, translated);
   } else {
