@@ -37,6 +37,7 @@
       <div class="form-group"><label>메인 제목</label><input id="eTitle" value="COFFEE" oninput="renderPreview()"></div>
       <div class="form-group"><label>부제목</label><input id="eSubtitle" value="Our signature drinks" oninput="renderPreview()"></div>
     </div>
+
     <div class="editor-section">
       <div class="section-title">폰트</div>
       <div class="form-group">
@@ -48,8 +49,39 @@
         </select>
       </div>
     </div>
+
+    <div class="editor-section">
+      <div class="section-title">글씨 크기</div>
+      <div class="size-row">
+        <div class="size-item">
+          <label>메인 제목 <span id="vTitle" class="size-val">76</span>px</label>
+          <input type="range" min="36" max="120" value="76" id="fsTitle" oninput="onSize('title',this)">
+        </div>
+        <div class="size-item">
+          <label>카테고리 <span id="vCat" class="size-val">30</span>px</label>
+          <input type="range" min="14" max="60" value="30" id="fsCat" oninput="onSize('cat',this)">
+        </div>
+        <div class="size-item">
+          <label>메뉴명 <span id="vName" class="size-val">26</span>px</label>
+          <input type="range" min="12" max="42" value="26" id="fsName" oninput="onSize('name',this)">
+        </div>
+        <div class="size-item">
+          <label>설명 <span id="vDesc" class="size-val">13</span>px</label>
+          <input type="range" min="9" max="22" value="13" id="fsDesc" oninput="onSize('desc',this)">
+        </div>
+        <div class="size-item">
+          <label>가격 <span id="vPrice" class="size-val">13</span>px</label>
+          <input type="range" min="9" max="22" value="13" id="fsPrice" oninput="onSize('price',this)">
+        </div>
+      </div>
+    </div>
+
     <div class="editor-section" style="border-bottom:none">
-      <div class="section-title">메뉴 아이템</div>
+      <div class="section-title-row">
+        <span class="section-title" style="margin-bottom:0">메뉴 아이템</span>
+        <button class="add-page-btn" onclick="addPage()" title="새 페이지 추가">+ 페이지</button>
+      </div>
+      <div id="pageTabs" class="page-tabs"></div>
     </div>
     <div id="itemsList"></div>
     <button class="add-btn" onclick="addItem()">+ 메뉴 추가</button>
@@ -60,6 +92,7 @@
     <div class="preview-scaler">
       <div id="menuPreview"></div>
     </div>
+    <div id="pageNav" class="page-nav"></div>
   </div>
 </div>
 
@@ -72,15 +105,30 @@
       <button class="mtab" onclick="switchTab('url',this)">URL 입력</button>
       <button class="mtab" onclick="switchTab('upload',this)">파일 업로드</button>
     </div>
-    <!-- Search -->
     <div class="tab-pane active" id="tab-search">
       <div class="search-row">
-        <input id="searchQ" class="search-input" placeholder="검색어 입력 (예: latte, espresso, cake)">
+        <input id="searchQ" class="search-input" placeholder="한글/영어 모두 검색 가능 (예: 라떼, 케이크)">
         <button class="search-btn" onclick="doSearch()">검색</button>
       </div>
+      <div id="translateNotice" class="translate-notice" style="display:none"></div>
       <div id="imgGrid" class="img-grid"></div>
+      <div class="api-key-box">
+        <div class="api-key-title" onclick="toggleApiKeyBox()">
+          <span>고품질 사진 사용하기 (Pixabay API 키)</span>
+          <span id="apiKeyArrow">▾</span>
+        </div>
+        <div id="apiKeyBody" style="display:none">
+          <p class="api-key-desc">
+            <a href="https://pixabay.com/api/docs/" target="_blank">pixabay.com</a>에서 무료 가입 후 API 키를 발급받아 입력하면 고화질 음식 사진을 검색할 수 있습니다. (월 20,000회 무료)
+          </p>
+          <div class="search-row" style="margin-top:8px">
+            <input id="pixabayKey" class="search-input" placeholder="Pixabay API 키 붙여넣기" type="password">
+            <button class="search-btn" onclick="savePixabayKey()">저장</button>
+          </div>
+          <div id="apiKeyStatus" style="font-size:11px;margin-top:6px;color:#888"></div>
+        </div>
+      </div>
     </div>
-    <!-- URL -->
     <div class="tab-pane" id="tab-url">
       <div class="search-row">
         <input id="urlInput" class="search-input" placeholder="이미지 URL 붙여넣기">
@@ -88,7 +136,6 @@
       </div>
       <img id="urlPreviewImg" style="display:none;max-height:150px;border-radius:8px;margin-top:8px;object-fit:cover;width:100%">
     </div>
-    <!-- Upload -->
     <div class="tab-pane" id="tab-upload">
       <div class="upload-area" onclick="document.getElementById('fileInput').click()">
         <div style="font-size:36px;margin-bottom:8px">📁</div>
