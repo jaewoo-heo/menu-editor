@@ -7,11 +7,12 @@ const SHARED_ROW_ID     = 'shared';
 
 // ── Supabase 클라이언트 ──────────────────────────────────────────
 let db = null;
-let realtimeChannel = null;
-let _lastSaveTime   = 0;   // 내 저장 타임스탬프 (realtime echo 무시용)
-let _reconnectTimer = null; // 자동 재연결 타이머
-let _pollTimer      = null; // 폴링 백업 타이머
-let _pollInterval   = 30000; // 30초마다 폴링
+let realtimeChannel  = null;
+let _lastSaveTime    = 0;     // 내 저장 타임스탬프 (realtime echo 무시용)
+let _reconnectTimer  = null;  // 자동 재연결 타이머
+let _reconnectCount  = 0;     // 재연결 시도 횟수 (최대 3회 후 포기)
+let _pollTimer       = null;  // 폴링 타이머
+const _pollInterval  = 30000; // 30초마다 폴링
 
 function setSyncStatus(text, state) {
   const el = document.getElementById('syncStatus');
@@ -20,7 +21,7 @@ function setSyncStatus(text, state) {
   el.className   = 'sync-status' + (state ? ' ' + state : '');
 }
 
-// ── 실시간 채널 구독 (재연결에도 재사용) ─────────────────────────
+// ── 실시간 채널 구독 (최대 3회 재시도 후 폴링 전용 모드로 전환) ──
 function subscribeRealtime() {
   if (!db) return;
   if (realtimeChannel) {
@@ -32,10 +33,8 @@ function subscribeRealtime() {
     .on('postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'menu_state', filter: `id=eq.${SHARED_ROW_ID}` },
       (payload) => {
-        // 내가 저장한 이벤트는 무시 (1초 이내 에코)
         const eventTime = new Date(payload.new?.updated_at).getTime();
         if (Date.now() - _lastSaveTime < 1000 && Math.abs(eventTime - _lastSaveTime) < 1500) return;
-
         const incoming = payload.new?.data;
         if (incoming && Object.keys(incoming).length > 0) {
           applyState(incoming);
@@ -45,19 +44,28 @@ function subscribeRealtime() {
       })
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
+        _reconnectCount = 0;
         setSyncStatus('🟢 실시간 연결됨', 'connected');
         clearTimeout(_reconnectTimer);
       } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-        setSyncStatus('🟡 재연결 중...', 'reconnecting');
-        // 5초 후 자동 재연결
-        clearTimeout(_reconnectTimer);
-        _reconnectTimer = setTimeout(() => subscribeRealtime(), 5000);
+        _reconnectCount++;
+        if (_reconnectCount <= 3) {
+          // 3회까지만 재시도 (5초 간격)
+          setSyncStatus(`🟡 재연결 중... (${_reconnectCount}/3)`, 'reconnecting');
+          clearTimeout(_reconnectTimer);
+          _reconnectTimer = setTimeout(() => subscribeRealtime(), 5000);
+        } else {
+          // 3회 실패 → WebSocket 차단으로 판단, 폴링 전용 모드
+          realtimeChannel?.unsubscribe();
+          realtimeChannel = null;
+          setSyncStatus('🟡 폴링 모드 (30초)', 'reconnecting');
+          // 폴링은 이미 실행 중 — 추가 작업 불필요
+        }
       }
     });
 }
 
 function initSupabase() {
-  // includes('PLACEHOLDER') 사용 — sed 치환 후에도 조건이 깨지지 않음
   if (!SUPABASE_URL      || SUPABASE_URL.includes('PLACEHOLDER') ||
       !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('PLACEHOLDER')) {
     setSyncStatus('⚪ 로컬 모드', 'local');
@@ -66,9 +74,8 @@ function initSupabase() {
 
   db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   subscribeRealtime();
-  startPolling(); // Realtime 불안정 대비 30초 폴링 백업
+  startPolling(); // REST API 기반 폴링 — WebSocket 차단 환경에서도 동작
 
-  // 탭 닫힐 때 채널 정리
   window.addEventListener('beforeunload', () => {
     clearTimeout(_reconnectTimer);
     clearInterval(_pollTimer);
