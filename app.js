@@ -9,6 +9,7 @@ const SHARED_ROW_ID     = 'shared';
 let db = null;
 let realtimeChannel = null;
 let _lastSaveTime   = 0;   // 내 저장 타임스탬프 (realtime echo 무시용)
+let _reconnectTimer = null; // 자동 재연결 타이머
 
 function setSyncStatus(text, state) {
   const el = document.getElementById('syncStatus');
@@ -17,15 +18,13 @@ function setSyncStatus(text, state) {
   el.className   = 'sync-status' + (state ? ' ' + state : '');
 }
 
-function initSupabase() {
-  // includes('PLACEHOLDER') 사용 — sed 치환 후에도 조건이 깨지지 않음
-  if (!SUPABASE_URL      || SUPABASE_URL.includes('PLACEHOLDER') ||
-      !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('PLACEHOLDER')) {
-    setSyncStatus('⚪ 로컬 모드', 'local');
-    return;
+// ── 실시간 채널 구독 (재연결에도 재사용) ─────────────────────────
+function subscribeRealtime() {
+  if (!db) return;
+  if (realtimeChannel) {
+    realtimeChannel.unsubscribe();
+    realtimeChannel = null;
   }
-
-  db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   realtimeChannel = db.channel('menu_realtime')
     .on('postgres_changes',
@@ -45,13 +44,57 @@ function initSupabase() {
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         setSyncStatus('🟢 실시간 연결됨', 'connected');
+        clearTimeout(_reconnectTimer);
       } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-        setSyncStatus('🔴 연결 끊김', 'error');
+        setSyncStatus('🟡 재연결 중...', 'reconnecting');
+        // 5초 후 자동 재연결
+        clearTimeout(_reconnectTimer);
+        _reconnectTimer = setTimeout(() => subscribeRealtime(), 5000);
       }
     });
+}
+
+function initSupabase() {
+  // includes('PLACEHOLDER') 사용 — sed 치환 후에도 조건이 깨지지 않음
+  if (!SUPABASE_URL      || SUPABASE_URL.includes('PLACEHOLDER') ||
+      !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('PLACEHOLDER')) {
+    setSyncStatus('⚪ 로컬 모드', 'local');
+    return;
+  }
+
+  db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  subscribeRealtime();
 
   // 탭 닫힐 때 채널 정리
-  window.addEventListener('beforeunload', () => realtimeChannel?.unsubscribe());
+  window.addEventListener('beforeunload', () => {
+    clearTimeout(_reconnectTimer);
+    realtimeChannel?.unsubscribe();
+  });
+}
+
+// ── 수동 동기화 (서버 최신 데이터 가져오기 + 내 변경사항 올리기) ──
+async function syncNow() {
+  if (!db) { showToast('⚪ 로컬 모드 — 서버 연결 없음', 2500); return; }
+  const btn = document.getElementById('syncBtn');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    // 1) 내 현재 상태 서버에 저장
+    await saveState();
+    // 2) 서버 최신 데이터 가져오기
+    const { data, error } = await db
+      .from('menu_state').select('data').eq('id', SHARED_ROW_ID).single();
+    if (!error && data?.data && Object.keys(data.data).length > 0) {
+      applyState(data.data);
+      syncUIFromState();
+    }
+    // 3) 실시간 채널이 끊겼으면 재연결
+    subscribeRealtime();
+    showToast('☁️ 동기화 완료', 2000);
+  } catch (e) {
+    showToast('❌ 동기화 실패: ' + e.message, 3000);
+  } finally {
+    if (btn) { btn.textContent = '☁️ 동기화'; btn.disabled = false; }
+  }
 }
 
 // ── 상태 적용 (마이그레이션 포함) ───────────────────────────────
