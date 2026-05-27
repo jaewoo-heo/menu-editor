@@ -1,6 +1,6 @@
 // GitHub Actions 배포 시 Secrets의 키로 자동 치환됨
 const BUILTIN_KEY       = '56027271-2b10af9f46b343d248a57b6ac';
-const SUPABASE_URL      = 'https://vwnkwfplqiijsxzyiscg.supabase.co';
+const SUPABASE_URL      = 'https://vwnkwfplqijjsxzyiscg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3bmt3ZnBscWlqanN4enlpc2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MzQyOTQsImV4cCI6MjA5NTQxMDI5NH0._yyxBnheH30gp2PCXmCVLxmAi4VTDO0WCmGKGLnCTgk';
 const STORAGE_KEY       = 'menuEditor_v1';
 const SHARED_ROW_ID     = 'shared';
