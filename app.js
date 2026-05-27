@@ -10,6 +10,8 @@ let db = null;
 let realtimeChannel = null;
 let _lastSaveTime   = 0;   // 내 저장 타임스탬프 (realtime echo 무시용)
 let _reconnectTimer = null; // 자동 재연결 타이머
+let _pollTimer      = null; // 폴링 백업 타이머
+let _pollInterval   = 30000; // 30초마다 폴링
 
 function setSyncStatus(text, state) {
   const el = document.getElementById('syncStatus');
@@ -64,12 +66,34 @@ function initSupabase() {
 
   db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   subscribeRealtime();
+  startPolling(); // Realtime 불안정 대비 30초 폴링 백업
 
   // 탭 닫힐 때 채널 정리
   window.addEventListener('beforeunload', () => {
     clearTimeout(_reconnectTimer);
+    clearInterval(_pollTimer);
     realtimeChannel?.unsubscribe();
   });
+}
+
+// ── 폴링 백업: Realtime이 불안정할 때 30초마다 서버 변경사항 체크 ──
+async function startPolling() {
+  if (!db) return;
+  clearInterval(_pollTimer);
+  _pollTimer = setInterval(async () => {
+    try {
+      const { data, error } = await db
+        .from('menu_state').select('data,updated_at').eq('id', SHARED_ROW_ID).single();
+      if (error || !data?.data) return;
+      // 서버 데이터가 내 마지막 저장보다 최신이면 반영
+      const serverTime = new Date(data.updated_at).getTime();
+      if (serverTime > _lastSaveTime + 2000 && Object.keys(data.data).length > 0) {
+        applyState(data.data);
+        syncUIFromState();
+        showToast('🔄 서버 변경사항 반영됨', 2500);
+      }
+    } catch {}
+  }, _pollInterval);
 }
 
 // ── 수동 동기화 (서버 최신 데이터 가져오기 + 내 변경사항 올리기) ──
@@ -87,7 +111,7 @@ async function syncNow() {
       applyState(data.data);
       syncUIFromState();
     }
-    // 3) 실시간 채널이 끊겼으면 재연결
+    // 3) 실시간 채널이 끊겼으면 재연결 시도
     subscribeRealtime();
     showToast('☁️ 동기화 완료', 2000);
   } catch (e) {
