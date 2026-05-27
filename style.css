@@ -12,7 +12,10 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .bg-swatch{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .15s,border-color .15s;flex-shrink:0}
 .bg-swatch:hover,.bg-swatch.active{transform:scale(1.25);border-color:#fff}
 .bg-custom{width:28px;height:22px;border-radius:4px;border:1px solid #555;cursor:pointer;padding:1px}
-.pdf-btn{margin-left:auto;background:#4ade80;border:none;color:#1a2e1a;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;transition:background .2s;white-space:nowrap}
+.sync-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#ddd;padding:6px 13px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:background .2s;white-space:nowrap}
+.sync-btn:hover{background:rgba(255,255,255,.18)}
+.sync-btn:disabled{opacity:.5;cursor:not-allowed}
+.pdf-btn{margin-left:4px;background:#4ade80;border:none;color:#1a2e1a;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;transition:background .2s;white-space:nowrap}
 .pdf-btn:hover{background:#22c55e}
 
 /* SYNC STATUS */
@@ -20,6 +23,7 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .sync-status.connected{color:#4ade80}
 .sync-status.error{color:#f87171}
 .sync-status.local{color:#888}
+.sync-status.reconnecting{color:#fbbf24}
 
 /* SAVE TOAST */
 .save-toast{font-size:12px;color:#4ade80;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
