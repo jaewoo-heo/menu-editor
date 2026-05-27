@@ -1,5 +1,6 @@
 // GitHub Actions 배포 시 Secrets의 키로 자동 치환됨
 const BUILTIN_KEY = 'PIXABAY_KEY_PLACEHOLDER';
+const STORAGE_KEY = 'menuEditor_v1';
 
 function toggleSection(bodyId, header) {
   const body  = document.getElementById(bodyId);
@@ -11,21 +12,18 @@ function toggleSection(bodyId, header) {
 
 // ── 한글 → 영어 번역 사전 ───────────────────────────────────────
 const KO_EN = {
-  // ── 커피 ──
   '커피':'coffee','라떼':'latte coffee','카페라떼':'cafe latte','아메리카노':'americano coffee',
   '에스프레소':'espresso coffee','카푸치노':'cappuccino','마키아토':'macchiato coffee',
   '콜드브루':'cold brew coffee','콜드 브루':'cold brew coffee',
   '니트로':'nitro coffee','드립커피':'drip coffee','핸드드립':'pour over coffee',
   '더치커피':'dutch coffee','플랫화이트':'flat white coffee','룽고':'lungo coffee',
   '오트라떼':'oat latte','오트콜드브루':'oat cold brew',
-  // ── 차 / 음료 ──
   '녹차':'green tea','말차':'matcha','홍차':'black tea','허브티':'herbal tea',
   '카모마일':'chamomile tea','얼그레이':'earl grey tea','페퍼민트':'peppermint tea',
   '레모네이드':'lemonade','에이드':'ade drink','주스':'fruit juice',
   '스무디':'smoothie','밀크쉐이크':'milkshake','버블티':'bubble tea',
   '밀크티':'milk tea','아이스티':'iced tea','요거트':'yogurt drink',
   '음료':'beverage','탄산':'sparkling water',
-  // ── 베이커리 / 디저트 ──
   '케이크':'cake','쿠키':'cookie','마카롱':'macaron','크루아상':'croissant',
   '베이글':'bagel','머핀':'muffin','스콘':'scone','도넛':'donut',
   '빵':'bread','바게트':'baguette','와플':'waffle','팬케이크':'pancake',
@@ -33,11 +31,9 @@ const KO_EN = {
   '치즈케이크':'cheesecake','마들렌':'madeleine','휘낭시에':'financier',
   '아이스크림':'ice cream','빙수':'shaved ice bingsu','젤라토':'gelato',
   '푸딩':'pudding','초콜릿':'chocolate','초코':'chocolate dessert',
-  // ── 양식 ──
   '샌드위치':'sandwich','토스트':'toast','샐러드':'salad','수프':'soup',
   '파스타':'pasta','피자':'pizza','버거':'burger','스테이크':'steak',
   '그래놀라':'granola bowl','오트밀':'oatmeal','아보카도':'avocado toast','브런치':'brunch',
-  // ── 한식 메인 ──
   '잡채':'japchae glass noodles','잡채덮밥':'japchae rice bowl korean food',
   '덮밥':'korean rice bowl','비빔밥':'bibimbap korean rice bowl',
   '불고기':'bulgogi korean beef','삼겹살':'samgyeopsal pork belly grilled',
@@ -47,25 +43,20 @@ const KO_EN = {
   '김치찌개':'kimchi jjigae stew','된장찌개':'doenjang jjigae soybean paste stew',
   '국밥':'korean rice soup','해장국':'korean hangover soup',
   '삼계탕':'samgyetang ginseng chicken soup',
-  // ── 한식 분식 / 길거리 ──
   '떡볶이':'tteokbokki spicy rice cake','김밥':'kimbap korean rice roll',
   '순대':'sundae korean sausage','만두':'mandu dumpling korean',
   '전':'jeon korean pancake','파전':'pajeon green onion pancake',
   '해물파전':'seafood pancake korean','튀김':'korean fried food',
-  // ── 한식 면 ──
   '냉면':'naengmyeon cold noodles korean','라면':'ramen noodles',
   '우동':'udon noodles','짜장면':'jajangmyeon black bean noodles',
   '짬뽕':'jjamppong spicy seafood noodles','칼국수':'kalguksu knife cut noodles',
-  // ── 한식 구이 / 해산물 ──
   '생선구이':'grilled fish korean','고등어구이':'grilled mackerel',
   '전복':'abalone','게장':'marinated crab korean','회':'sashimi korean',
   '연어':'salmon dish','참치':'tuna dish','새우':'shrimp prawn',
   '오징어':'squid calamari','낙지':'octopus korean','조개':'clam shellfish',
-  // ── 한식 기타 ──
   '김치':'kimchi','보쌈':'bossam pork wrap korean','족발':'jokbal braised pork feet',
   '곱창':'gopchang grilled intestine','육회':'yukhoe korean beef tartare',
   '도시락':'bento lunch box','한정식':'korean set meal',
-  // ── 재료 / 맛 ──
   '바닐라':'vanilla','딸기':'strawberry','카라멜':'caramel',
   '헤이즐넛':'hazelnut','민트':'mint','블루베리':'blueberry',
   '망고':'mango','복숭아':'peach','자몽':'grapefruit',
@@ -74,9 +65,7 @@ const KO_EN = {
 
 function translateQuery(q) {
   if (!/[가-힣]/.test(q)) return { text: q, translated: false };
-  // 전체 일치
   if (KO_EN[q]) return { text: KO_EN[q], translated: true, original: q };
-  // 부분 일치 (긴 키워드 우선)
   let result = q;
   const keys = Object.keys(KO_EN).sort((a,b) => b.length - a.length);
   let found = false;
@@ -87,28 +76,85 @@ function translateQuery(q) {
   return { text: q, translated: false };
 }
 
-// ── 상태 ────────────────────────────────────────────────────────
-const S = {
+// ── 기본 상태 ────────────────────────────────────────────────────
+const DEFAULT_STATE = {
   layout: 'coffee',
   bg: '#F5EFE6',
   font: "'Playfair Display',serif",
   fs: { title: 76, cat: 30, sub: 14, name: 26, desc: 13, price: 13 },
+  cur: 0,
   pages: [
     {
       id: 1,
+      type: 'cover',
+      category: 'special',
+      title: 'COFFEE',
+      subtitle: 'Our signature drinks',
+      tagline: 'Est. 2024',
+      items: []
+    },
+    {
+      id: 2,
+      type: 'menu',
+      category: 'MENU',
+      title: 'COFFEE',
+      subtitle: 'Our signature drinks',
+      tagline: '',
       items: [
         { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피. 식물성 대체음료를 사용한 콜드 브루 음료.', price: '7,000', img: null, showName: true, showDesc: true, showPrice: true },
         { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 저지방의 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, showName: true, showDesc: true, showPrice: true },
         { id: 12, name: 'Nitro',          desc: '나이트로 커피 질감의 캐러멜이냐 부드러운 콜드 크림과 부드러운 묵직함이 어우러진 음료.', price: '8,500', img: null, showName: true, showDesc: true, showPrice: true },
       ]
     }
-  ],
-  cur: 0,
+  ]
 };
+
+let S = JSON.parse(JSON.stringify(DEFAULT_STATE));
 
 const MAX_ITEMS = 6;
 let editItemId = null;
 let pendingImg  = null;
+
+// ── localStorage 저장 / 불러오기 ─────────────────────────────────
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
+    showSaveToast();
+  } catch(e) {
+    console.warn('저장 실패:', e);
+  }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const loaded = JSON.parse(raw);
+    // 기존 저장 데이터에 type 필드가 없을 경우 마이그레이션
+    if (loaded.pages) {
+      loaded.pages.forEach((p, i) => {
+        if (!p.type) p.type = (i === 0) ? 'cover' : 'menu';
+        if (!p.category) p.category = '';
+        if (!p.title) p.title = '';
+        if (!p.subtitle) p.subtitle = '';
+        if (!p.tagline) p.tagline = '';
+      });
+    }
+    Object.assign(S, loaded);
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+let saveToastTimer = null;
+function showSaveToast() {
+  const t = document.getElementById('saveToast');
+  if (!t) return;
+  t.classList.add('show');
+  clearTimeout(saveToastTimer);
+  saveToastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+}
 
 // ── 배경 팔레트 ──────────────────────────────────────────────────
 const PALETTES = {
@@ -116,8 +162,13 @@ const PALETTES = {
   modern:  ['#0a0a0a','#111827','#1e293b','#0f172a','#27272a','#18181b'],
   elegant: ['#FDFAF5','#F5EEE6','#EDE0D4','#FFF8F0','#FFFFF0','#FAF5EB'],
   chalk:   ['#2C4A3E','#1B3A2F','#354F52','#2F3E46','#354733','#1D3557'],
+  bistro:  ['#1C1208','#2A1C0E','#3D2B14','#4A3520','#5C3D1E','#7A4F2A'],
+  minimal: ['#FFFFFF','#F8F8F8','#F0F0F0','#E8E8E8','#F5F5F0','#EBEBEB'],
 };
-const DEFAULT_BG = { coffee:'#F5EFE6', modern:'#0a0a0a', elegant:'#FDFAF5', chalk:'#2C4A3E' };
+const DEFAULT_BG = {
+  coffee:'#F5EFE6', modern:'#0a0a0a', elegant:'#FDFAF5',
+  chalk:'#2C4A3E', bistro:'#1C1208', minimal:'#FFFFFF'
+};
 
 function initSwatches() {
   const c = document.getElementById('bgSwatches');
@@ -127,7 +178,7 @@ function initSwatches() {
     el.className = 'bg-swatch' + (col === S.bg ? ' active' : '');
     el.style.background = col;
     el.title = col;
-    el.onclick = () => { S.bg = col; initSwatches(); renderPreview(); };
+    el.onclick = () => { S.bg = col; initSwatches(); renderPreview(); saveState(); };
     c.appendChild(el);
   });
   document.getElementById('bgCustom').value = S.bg;
@@ -137,6 +188,7 @@ function setCustomBg(v) {
   S.bg = v;
   document.querySelectorAll('.bg-swatch').forEach(s => s.classList.remove('active'));
   renderPreview();
+  saveState();
 }
 
 // ── 레이아웃 ─────────────────────────────────────────────────────
@@ -147,6 +199,7 @@ function setLayout(l, btn) {
   S.bg = DEFAULT_BG[l];
   initSwatches();
   renderPreview();
+  saveState();
 }
 
 // ── 글씨 크기 ────────────────────────────────────────────────────
@@ -155,6 +208,7 @@ function onSize(key, input) {
   const labelMap = { title:'vTitle', cat:'vCat', sub:'vSub', name:'vName', desc:'vDesc', price:'vPrice' };
   document.getElementById(labelMap[key]).textContent = input.value;
   renderPreview();
+  saveState();
 }
 
 // ── 페이지 관리 ──────────────────────────────────────────────────
@@ -162,12 +216,13 @@ function curPage() { return S.pages[S.cur]; }
 
 function addPage() {
   const id = Date.now();
-  S.pages.push({ id, items: [] });
+  S.pages.push({
+    id, type: 'menu',
+    category: 'MENU', title: '', subtitle: '', tagline: '', items: []
+  });
   S.cur = S.pages.length - 1;
-  renderPageTabs();
-  renderItems();
-  renderPreview();
-  renderPageNav();
+  renderAll();
+  saveState();
 }
 
 function deletePage(idx, e) {
@@ -175,15 +230,18 @@ function deletePage(idx, e) {
   if (S.pages.length === 1) { alert('마지막 페이지는 삭제할 수 없습니다.'); return; }
   S.pages.splice(idx, 1);
   if (S.cur >= S.pages.length) S.cur = S.pages.length - 1;
-  renderPageTabs();
-  renderItems();
-  renderPreview();
-  renderPageNav();
+  renderAll();
+  saveState();
 }
 
 function setPage(idx) {
   S.cur = idx;
+  renderAll();
+}
+
+function renderAll() {
   renderPageTabs();
+  renderEditorHeader();
   renderItems();
   renderPreview();
   renderPageNav();
@@ -196,7 +254,8 @@ function renderPageTabs() {
     const tab = document.createElement('div');
     tab.className = 'page-tab' + (i === S.cur ? ' active' : '');
     tab.onclick = () => setPage(i);
-    tab.innerHTML = `페이지 ${i+1}`;
+    const label = p.type === 'cover' ? '📖 표지' : `페이지 ${i}`;
+    tab.innerHTML = label;
     if (S.pages.length > 1) {
       const del = document.createElement('span');
       del.className = 'page-tab-del';
@@ -221,11 +280,69 @@ function renderPageNav() {
   `;
 }
 
+// ── 에디터 헤더 (페이지별 필드) ──────────────────────────────────
+function renderEditorHeader() {
+  const el = document.getElementById('editorHeader');
+  const p = curPage();
+  const isCover = p.type === 'cover';
+
+  el.innerHTML = `
+    <div class="page-type-row">
+      <span class="section-title" style="margin-bottom:0">페이지 설정</span>
+      <label class="type-toggle-label">
+        <input type="checkbox" ${isCover?'checked':''} onchange="togglePageType(this.checked)">
+        <span class="type-toggle-chip">${isCover?'📖 표지':'📋 메뉴'}</span>
+      </label>
+    </div>
+    <div class="form-group" style="margin-top:10px">
+      <label>${isCover ? '태그라인 (상단)' : '카테고리'}</label>
+      <input value="${esc(isCover ? p.tagline : p.category)}"
+             oninput="setPageField('${isCover?'tagline':'category'}', this.value)">
+    </div>
+    <div class="form-group">
+      <label>메인 제목</label>
+      <input value="${esc(p.title)}" oninput="setPageField('title', this.value)">
+    </div>
+    <div class="form-group">
+      <label>부제목</label>
+      <input value="${esc(p.subtitle)}" oninput="setPageField('subtitle', this.value)">
+    </div>
+    ${isCover ? `<div class="form-group">
+      <label>하단 태그라인</label>
+      <input value="${esc(p.tagline)}" oninput="setPageField('tagline', this.value)" placeholder="Est. 2024">
+    </div>` : ''}
+  `;
+}
+
+function togglePageType(isCover) {
+  const p = curPage();
+  p.type = isCover ? 'cover' : 'menu';
+  renderAll();
+  saveState();
+}
+
+function setPageField(key, val) {
+  curPage()[key] = val;
+  renderPreview();
+  saveState();
+}
+
 // ── 아이템 목록 ──────────────────────────────────────────────────
 function renderItems() {
   const container = document.getElementById('itemsList');
+  const addBtn    = document.querySelector('.add-btn');
+  const p = curPage();
+
+  // 표지 페이지에서는 메뉴 아이템 UI 숨김
+  if (p.type === 'cover') {
+    container.innerHTML = '<div class="cover-notice">표지 페이지에는 메뉴 아이템이 없습니다.</div>';
+    if (addBtn) addBtn.style.display = 'none';
+    return;
+  }
+  if (addBtn) addBtn.style.display = '';
+
   container.innerHTML = '';
-  const items = curPage().items;
+  const items = p.items;
 
   items.forEach((item, i) => {
     const div = document.createElement('div');
@@ -271,7 +388,6 @@ function renderItems() {
     container.appendChild(div);
   });
 
-  // 6개 제한 안내
   if (items.length >= MAX_ITEMS) {
     const notice = document.createElement('div');
     notice.className = 'page-limit-notice';
@@ -294,22 +410,25 @@ function setField(id, key, val) {
         if (lbl) lbl.textContent = val || '(이름없음)';
       }
       renderPreview();
+      saveState();
       return;
     }
   }
 }
 
 function addItem() {
-  const items = curPage().items;
-  if (items.length >= MAX_ITEMS) {
+  const p = curPage();
+  if (p.type === 'cover') return;
+  if (p.items.length >= MAX_ITEMS) {
     const go = confirm(`이 페이지는 최대 ${MAX_ITEMS}개입니다.\n새 페이지를 만들고 거기에 추가할까요?`);
     if (go) { addPage(); }
     return;
   }
   const id = Date.now();
-  items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, showName: true, showDesc: true, showPrice: true });
+  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, showName: true, showDesc: true, showPrice: true });
   renderItems();
   renderPreview();
+  saveState();
   setTimeout(() => { document.getElementById('body-' + id)?.classList.add('open'); }, 50);
 }
 
@@ -321,28 +440,32 @@ function delItem(id, e) {
   }
   renderItems();
   renderPreview();
+  saveState();
 }
 
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 
 // ── 프리뷰 렌더 ──────────────────────────────────────────────────
 function renderPreview() {
-  const cat   = document.getElementById('eCategory').value;
-  const title = document.getElementById('eTitle').value;
-  const sub   = document.getElementById('eSubtitle').value;
-  S.font      = document.getElementById('eFont').value;
+  const p = curPage();
+  S.font = document.getElementById('eFont').value;
 
   const el  = document.getElementById('menuPreview');
-  const cls = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk' }[S.layout] || 'lc';
+  const cls = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' }[S.layout] || 'lc';
   el.className    = cls;
   el.style.background  = S.bg;
   el.style.fontFamily  = S.font;
 
-  const items = curPage().items;
-  if (S.layout === 'coffee')  el.innerHTML = tplCoffee(cat, title, sub, items);
-  if (S.layout === 'modern')  el.innerHTML = tplModern(cat, title, sub, items);
-  if (S.layout === 'elegant') el.innerHTML = tplElegant(cat, title, sub, items);
-  if (S.layout === 'chalk')   el.innerHTML = tplChalk(cat, title, sub, items);
+  if (p.type === 'cover') {
+    el.innerHTML = tplCover(p);
+  } else {
+    if (S.layout === 'coffee')  el.innerHTML = tplCoffee(p);
+    if (S.layout === 'modern')  el.innerHTML = tplModern(p);
+    if (S.layout === 'elegant') el.innerHTML = tplElegant(p);
+    if (S.layout === 'chalk')   el.innerHTML = tplChalk(p);
+    if (S.layout === 'bistro')  el.innerHTML = tplBistro(p);
+    if (S.layout === 'minimal') el.innerHTML = tplMinimal(p);
+  }
 
   scalePreview();
 }
@@ -354,7 +477,28 @@ function imgTag(item, imgCls, phCls, phIcon = '☕') {
 }
 function num(i) { return String(i+1).padStart(2,'0'); }
 
-function tplCoffee(cat, title, sub, items) {
+// ── 커버 템플릿 (레이아웃별 스타일 적용) ─────────────────────────
+function tplCover(p) {
+  const layoutCoverClass = {
+    coffee:'cover-coffee', modern:'cover-modern', elegant:'cover-elegant',
+    chalk:'cover-chalk', bistro:'cover-bistro', minimal:'cover-minimal'
+  }[S.layout] || 'cover-coffee';
+
+  return `
+    <div class="cover-wrap ${layoutCoverClass}">
+      <div class="cover-inner">
+        ${p.tagline ? `<div class="cover-tag">${p.tagline}</div>` : ''}
+        <div class="cover-cat" style="font-size:${S.fs.cat}px">${p.category||''}</div>
+        <div class="cover-title" style="font-size:${S.fs.title}px">${p.title||''}</div>
+        <div class="cover-divider"><span class="cover-orn">─✦─</span></div>
+        <div class="cover-sub" style="font-size:${S.fs.sub}px">${p.subtitle||''}</div>
+      </div>
+    </div>`;
+}
+
+// ── 메뉴 템플릿들 ────────────────────────────────────────────────
+function tplCoffee(p) {
+  const { category: cat, title, subtitle: sub, items } = p;
   const rows = items.map((it, i) => `
     <div class="m-item ${i%2===0?'odd':'even'}">
       ${imgTag(it,'m-img','m-img-ph')}
@@ -371,7 +515,8 @@ function tplCoffee(cat, title, sub, items) {
           <hr class="m-divider">${rows}`;
 }
 
-function tplModern(cat, title, sub, items) {
+function tplModern(p) {
+  const { category: cat, title, subtitle: sub, items } = p;
   const rows = items.map((it, i) => `
     <div class="m-item">
       ${imgTag(it,'m-img','m-img-ph')}
@@ -391,7 +536,8 @@ function tplModern(cat, title, sub, items) {
           <div class="m-grid">${rows}</div>`;
 }
 
-function tplElegant(cat, title, sub, items) {
+function tplElegant(p) {
+  const { category: cat, title, subtitle: sub, items } = p;
   const rows = items.map((it, i) => `
     <div class="m-item">
       ${imgTag(it,'m-img','m-img-ph','✦')}
@@ -413,7 +559,8 @@ function tplElegant(cat, title, sub, items) {
           ${rows}`;
 }
 
-function tplChalk(cat, title, sub, items) {
+function tplChalk(p) {
+  const { category: cat, title, subtitle: sub, items } = p;
   const rows = items.map((it, i) => `
     <div class="m-item">
       ${imgTag(it,'m-img','m-img-ph')}
@@ -431,6 +578,57 @@ function tplChalk(cat, title, sub, items) {
   return `<div class="m-cat" style="font-size:${S.fs.cat}px">${cat}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
           <hr class="m-divider">${rows}`;
+}
+
+// ── 비스트로 템플릿 (따뜻한 빈티지 레스토랑 스타일) ──────────────
+function tplBistro(p) {
+  const { category: cat, title, subtitle: sub, items } = p;
+  const rows = items.map((it, i) => `
+    <div class="m-item">
+      ${imgTag(it,'m-img','m-img-ph','🍽')}
+      <div class="m-content">
+        <div class="m-row">
+          <div class="m-left">
+            <span class="m-num" style="font-size:${Math.max(9,S.fs.desc)}px">${num(i)}</span>
+            ${it.showName!==false ? `<span class="m-name" style="font-size:${S.fs.name}px">${it.name}</span>` : ''}
+          </div>
+          ${it.showPrice!==false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${it.price}</span>` : ''}
+        </div>
+        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
+        <div class="m-dots"></div>
+      </div>
+    </div>`).join('');
+  return `
+    <div class="lb-header">
+      <div class="lb-badge">${cat}</div>
+      <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
+      <div class="lb-rule"><span>${sub}</span></div>
+    </div>
+    <div class="lb-body">${rows}</div>`;
+}
+
+// ── 미니멀 템플릿 (깔끔한 종이 스타일) ───────────────────────────
+function tplMinimal(p) {
+  const { category: cat, title, subtitle: sub, items } = p;
+  const rows = items.map((it, i) => `
+    <div class="m-item">
+      ${imgTag(it,'m-img','m-img-ph','·')}
+      <div class="m-content">
+        <div class="m-top-row">
+          ${it.showName!==false ? `<div class="m-name" style="font-size:${S.fs.name}px">${it.name}</div>` : ''}
+          ${it.showPrice!==false ? `<div class="m-price" style="font-size:${S.fs.price}px">${it.price}</div>` : ''}
+        </div>
+        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
+      </div>
+    </div>`).join('');
+  return `
+    <div class="lmin-header">
+      <div class="lmin-cat" style="font-size:${S.fs.cat*0.5}px">${cat}</div>
+      <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
+      ${sub ? `<div class="lmin-sub" style="font-size:${S.fs.sub}px">${sub}</div>` : ''}
+      <div class="lmin-line"></div>
+    </div>
+    <div class="lmin-body">${rows}</div>`;
 }
 
 // ── 스케일 ───────────────────────────────────────────────────────
@@ -550,7 +748,6 @@ async function doSearch() {
   grid.innerHTML = Array(9).fill('<div class="img-skeleton"></div>').join('');
   await new Promise(r => setTimeout(r, 250));
 
-  // Actions 배포 키 우선, 없으면 localStorage의 직접 입력 키 사용
   const pixabayKey = (BUILTIN_KEY && BUILTIN_KEY !== 'PIXABAY_KEY_PLACEHOLDER')
     ? BUILTIN_KEY
     : (localStorage.getItem('pixabay_key') || '');
@@ -632,6 +829,7 @@ async function confirmImage() {
 
   renderItems();
   renderPreview();
+  saveState();
   closeModal();
 }
 
@@ -680,8 +878,8 @@ async function exportPDF() {
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, y, canvas.width * ratio, canvas.height * ratio);
     }
 
-    const name = document.getElementById('eTitle').value || 'menu';
-    pdf.save(`${name}_menu.pdf`);
+    const titlePage = S.pages.find(p => p.title) || S.pages[0];
+    pdf.save(`${titlePage.title || 'menu'}_menu.pdf`);
   } catch (e) {
     alert('PDF 생성 실패: ' + e.message);
   }
@@ -694,8 +892,30 @@ async function exportPDF() {
 }
 
 // ── 초기화 ───────────────────────────────────────────────────────
-initSwatches();
-renderPageTabs();
-renderItems();
-renderPreview();
-renderPageNav();
+function init() {
+  loadState();
+
+  // 폰트 드롭다운 복원
+  const fontEl = document.getElementById('eFont');
+  if (fontEl) fontEl.value = S.font;
+
+  // 글씨 크기 슬라이더 복원
+  const fsMap = { title:'fsTitle', cat:'fsCat', sub:'fsSub', name:'fsName', desc:'fsDesc', price:'fsPrice' };
+  const vsMap = { title:'vTitle', cat:'vCat', sub:'vSub', name:'vName', desc:'vDesc', price:'vPrice' };
+  for (const [key, elId] of Object.entries(fsMap)) {
+    const el = document.getElementById(elId);
+    if (el) el.value = S.fs[key];
+    const vEl = document.getElementById(vsMap[key]);
+    if (vEl) vEl.textContent = S.fs[key];
+  }
+
+  // 레이아웃 버튼 복원
+  document.querySelectorAll('.layout-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.layout === S.layout);
+  });
+
+  initSwatches();
+  renderAll();
+}
+
+init();

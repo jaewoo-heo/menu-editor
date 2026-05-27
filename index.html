@@ -6,7 +6,7 @@
 <title>메뉴판 에디터</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Noto+Serif+KR:wght@300;400;700&family=Inter:wght@300;400;500;600&family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Noto+Serif+KR:wght@300;400;700&family=Inter:wght@300;400;500;600&family=Dancing+Script:wght@600&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,37 +15,38 @@
   <div class="toolbar-logo">메뉴판 에디터</div>
   <div class="toolbar-group">
     <span class="toolbar-label">레이아웃</span>
-    <button class="layout-btn active" data-layout="coffee" onclick="setLayout('coffee',this)">☕ 카페</button>
-    <button class="layout-btn" data-layout="modern" onclick="setLayout('modern',this)">◼ 모던</button>
-    <button class="layout-btn" data-layout="elegant" onclick="setLayout('elegant',this)">✦ 엘레강스</button>
-    <button class="layout-btn" data-layout="chalk" onclick="setLayout('chalk',this)">📝 칠판</button>
+    <button class="layout-btn active" data-layout="coffee"  onclick="setLayout('coffee',this)">☕ 카페</button>
+    <button class="layout-btn"        data-layout="modern"  onclick="setLayout('modern',this)">◼ 모던</button>
+    <button class="layout-btn"        data-layout="elegant" onclick="setLayout('elegant',this)">✦ 엘레강스</button>
+    <button class="layout-btn"        data-layout="chalk"   onclick="setLayout('chalk',this)">📝 칠판</button>
+    <button class="layout-btn"        data-layout="bistro"  onclick="setLayout('bistro',this)">🍷 비스트로</button>
+    <button class="layout-btn"        data-layout="minimal" onclick="setLayout('minimal',this)">□ 미니멀</button>
   </div>
   <div class="toolbar-group">
     <span class="toolbar-label">배경색</span>
     <div id="bgSwatches" class="bg-swatches"></div>
     <input type="color" id="bgCustom" class="bg-custom" title="커스텀 색상" onchange="setCustomBg(this.value)">
   </div>
+  <div id="saveToast" class="save-toast">✓ 저장됨</div>
   <button class="pdf-btn" onclick="exportPDF()">PDF 출력</button>
 </div>
 
 <div class="main-content">
   <!-- EDITOR -->
   <div class="editor-panel">
-    <div class="editor-section">
-      <div class="section-title">메뉴판 헤더</div>
-      <div class="form-group"><label>카테고리</label><input id="eCategory" value="special" oninput="renderPreview()"></div>
-      <div class="form-group"><label>메인 제목</label><input id="eTitle" value="COFFEE" oninput="renderPreview()"></div>
-      <div class="form-group"><label>부제목</label><input id="eSubtitle" value="Our signature drinks" oninput="renderPreview()"></div>
-    </div>
+
+    <!-- 페이지별 헤더 필드 (동적 렌더) -->
+    <div id="editorHeader" class="editor-section"></div>
 
     <div class="editor-section">
       <div class="section-title">폰트</div>
       <div class="form-group">
-        <select id="eFont" onchange="renderPreview()">
+        <select id="eFont" onchange="renderPreview();saveState()">
           <option value="'Playfair Display',serif">Playfair Display (클래식)</option>
           <option value="'Inter',sans-serif">Inter (모던)</option>
           <option value="'Noto Serif KR',serif">Noto Serif KR (한국어)</option>
           <option value="'Dancing Script',cursive">Dancing Script (손글씨)</option>
+          <option value="'Cormorant Garamond',serif">Cormorant Garamond (우아)</option>
         </select>
       </div>
     </div>
