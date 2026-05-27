@@ -164,12 +164,18 @@ async function saveState() {
     const now = new Date().toISOString();
     _lastSaveTime = Date.now();
     try {
-      await db.from('menu_state').upsert({ id: SHARED_ROW_ID, data: S, updated_at: now });
+      const { error } = await db.from('menu_state').upsert({ id: SHARED_ROW_ID, data: S, updated_at: now });
+      if (error) throw error;
+      showToast('✓ 저장됨 (서버)', 2000);
+      return;
     } catch (e) {
-      console.warn('Supabase 저장 실패:', e);
+      // ERR_NAME_NOT_RESOLVED 등 네트워크 오류 → 상태 표시 업데이트
+      const isNetErr = e?.message?.includes('ERR_NAME') || e?.message?.includes('fetch') || e?.message?.includes('network');
+      if (isNetErr) setSyncStatus('🔴 서버 연결 불가', 'error');
+      console.warn('Supabase 저장 실패:', e?.message || e);
     }
   }
-  showToast('✓ 저장됨', 2000);
+  showToast('✓ 저장됨 (로컬)', 2000);
 }
 
 async function loadState() {
