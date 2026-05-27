@@ -18,8 +18,9 @@ function setSyncStatus(text, state) {
 }
 
 function initSupabase() {
-  if (!SUPABASE_URL || SUPABASE_URL === 'SUPABASE_URL_PLACEHOLDER' ||
-      !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === 'SUPABASE_ANON_KEY_PLACEHOLDER') {
+  // includes('PLACEHOLDER') 사용 — sed 치환 후에도 조건이 깨지지 않음
+  if (!SUPABASE_URL      || SUPABASE_URL.includes('PLACEHOLDER') ||
+      !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('PLACEHOLDER')) {
     setSyncStatus('⚪ 로컬 모드', 'local');
     return;
   }
@@ -854,7 +855,7 @@ async function doSearch() {
   const grid = document.getElementById('imgGrid');
   grid.innerHTML = Array(9).fill('<div class="img-skeleton"></div>').join('');
   await new Promise(r => setTimeout(r, 250));
-  const pixabayKey = (BUILTIN_KEY && BUILTIN_KEY !== 'PIXABAY_KEY_PLACEHOLDER')
+  const pixabayKey = (BUILTIN_KEY && !BUILTIN_KEY.includes('PLACEHOLDER'))
     ? BUILTIN_KEY : (localStorage.getItem('pixabay_key') || '');
   if (pixabayKey) {
     await searchPixabay(q, grid, pixabayKey, translated);
