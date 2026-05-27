@@ -1,6 +1,138 @@
 // GitHub Actions 배포 시 Secrets의 키로 자동 치환됨
-const BUILTIN_KEY = '56027271-2b10af9f46b343d248a57b6ac';
-const STORAGE_KEY = 'menuEditor_v1';
+const BUILTIN_KEY      = '56027271-2b10af9f46b343d248a57b6ac';
+const SUPABASE_URL     = 'https://vwnkwfplqiijsxzyiscg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3bmt3ZnBscWlqanN4enlpc2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MzQyOTQsImV4cCI6MjA5NTQxMDI5NH0._yyxBnheH30gp2PCXmCVLxmAi4VTDO0WCmGKGLnCTgk';
+const STORAGE_KEY      = 'menuEditor_v1';
+const SHARED_ROW_ID    = 'shared';
+
+// ── Supabase 클라이언트 ──────────────────────────────────────────
+let db = null;        // supabase client
+let isSyncing = false; // 내 저장 중엔 realtime 무시
+
+function initSupabase() {
+  const url = SUPABASE_URL;
+  const key = SUPABASE_ANON_KEY;
+  if (!url || url === 'https://vwnkwfplqiijsxzyiscg.supabase.co') return;
+  if (!key || key === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3bmt3ZnBscWlqanN4enlpc2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MzQyOTQsImV4cCI6MjA5NTQxMDI5NH0._yyxBnheH30gp2PCXmCVLxmAi4VTDO0WCmGKGLnCTgk') return;
+
+  db = window.supabase.createClient(url, key);
+
+  // 실시간 구독 — 다른 사람이 저장하면 자동 반영
+  db.channel('menu_realtime')
+    .on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'menu_state', filter: `id=eq.${SHARED_ROW_ID}` },
+      (payload) => {
+        if (isSyncing) return;           // 내가 방금 저장한 이벤트면 무시
+        const incoming = payload.new?.data;
+        if (incoming && Object.keys(incoming).length > 0) {
+          applyState(incoming);
+          syncUIFromState();
+          showSyncToast('🔄 다른 사용자가 수정했습니다');
+        }
+      })
+    .subscribe((status) => {
+      const el = document.getElementById('syncStatus');
+      if (!el) return;
+      if (status === 'SUBSCRIBED') {
+        el.textContent  = '🟢 실시간 연결됨';
+        el.className    = 'sync-status connected';
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+        el.textContent  = '🔴 연결 끊김';
+        el.className    = 'sync-status error';
+      }
+    });
+}
+
+// ── 상태 적용 (마이그레이션 포함) ───────────────────────────────
+function applyState(data) {
+  if (!data || typeof data !== 'object') return;
+  if (data.pages) {
+    data.pages.forEach((p, i) => {
+      if (!p.type)     p.type     = (i === 0) ? 'cover' : 'menu';
+      if (!p.category) p.category = '';
+      if (!p.title)    p.title    = '';
+      if (!p.subtitle) p.subtitle = '';
+      if (!p.tagline)  p.tagline  = '';
+      if (!p.items)    p.items    = [];
+    });
+  }
+  // cur이 범위 초과하면 보정
+  if (data.cur !== undefined && data.pages && data.cur >= data.pages.length) {
+    data.cur = data.pages.length - 1;
+  }
+  Object.assign(S, data);
+}
+
+// ── localStorage 저장 / 불러오기 ─────────────────────────────────
+async function loadState() {
+  // 1) localStorage 캐시로 빠른 초기 로드
+  try {
+    const cached = localStorage.getItem(STORAGE_KEY);
+    if (cached) applyState(JSON.parse(cached));
+  } catch {}
+
+  // 2) Supabase에서 최신 데이터 덮어쓰기
+  if (db) {
+    try {
+      const { data, error } = await db
+        .from('menu_state')
+        .select('data')
+        .eq('id', SHARED_ROW_ID)
+        .single();
+      if (!error && data?.data && Object.keys(data.data).length > 0) {
+        applyState(data.data);
+        // 캐시 갱신
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
+        return true;
+      }
+    } catch (e) {
+      console.warn('Supabase 불러오기 실패 (로컬캐시 사용):', e);
+    }
+  }
+  return false;
+}
+
+async function saveState() {
+  // localStorage 즉시 저장
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
+
+  // Supabase upsert
+  if (db) {
+    isSyncing = true;
+    try {
+      await db.from('menu_state').upsert({
+        id: SHARED_ROW_ID,
+        data: S,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Supabase 저장 실패:', e);
+    } finally {
+      setTimeout(() => { isSyncing = false; }, 600);
+    }
+  }
+  showSaveToast();
+}
+
+// ── 토스트 알림 ──────────────────────────────────────────────────
+let saveToastTimer = null;
+function showSaveToast() {
+  const t = document.getElementById('saveToast');
+  if (!t) return;
+  t.textContent = '✓ 저장됨';
+  t.classList.add('show');
+  clearTimeout(saveToastTimer);
+  saveToastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function showSyncToast(msg) {
+  const t = document.getElementById('saveToast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(saveToastTimer);
+  saveToastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
 
 function toggleSection(bodyId, header) {
   const body  = document.getElementById(bodyId);
@@ -85,76 +217,26 @@ const DEFAULT_STATE = {
   cur: 0,
   pages: [
     {
-      id: 1,
-      type: 'cover',
-      category: 'special',
-      title: 'COFFEE',
-      subtitle: 'Our signature drinks',
-      tagline: 'Est. 2024',
-      items: []
+      id: 1, type: 'cover',
+      category: 'special', title: 'COFFEE',
+      subtitle: 'Our signature drinks', tagline: 'Est. 2024', items: []
     },
     {
-      id: 2,
-      type: 'menu',
-      category: 'MENU',
-      title: 'COFFEE',
-      subtitle: 'Our signature drinks',
-      tagline: '',
-      items: [
-        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피. 식물성 대체음료를 사용한 콜드 브루 음료.', price: '7,000', img: null, showName: true, showDesc: true, showPrice: true },
-        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 저지방의 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, showName: true, showDesc: true, showPrice: true },
-        { id: 12, name: 'Nitro',          desc: '나이트로 커피 질감의 캐러멜이냐 부드러운 콜드 크림과 부드러운 묵직함이 어우러진 음료.', price: '8,500', img: null, showName: true, showDesc: true, showPrice: true },
+      id: 2, type: 'menu',
+      category: 'MENU', title: 'COFFEE',
+      subtitle: 'Our signature drinks', tagline: '', items: [
+        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, showName: true, showDesc: true, showPrice: true },
+        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, showName: true, showDesc: true, showPrice: true },
+        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, showName: true, showDesc: true, showPrice: true },
       ]
     }
   ]
 };
 
 let S = JSON.parse(JSON.stringify(DEFAULT_STATE));
-
 const MAX_ITEMS = 6;
 let editItemId = null;
 let pendingImg  = null;
-
-// ── localStorage 저장 / 불러오기 ─────────────────────────────────
-function saveState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
-    showSaveToast();
-  } catch(e) {
-    console.warn('저장 실패:', e);
-  }
-}
-
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const loaded = JSON.parse(raw);
-    // 기존 저장 데이터에 type 필드가 없을 경우 마이그레이션
-    if (loaded.pages) {
-      loaded.pages.forEach((p, i) => {
-        if (!p.type) p.type = (i === 0) ? 'cover' : 'menu';
-        if (!p.category) p.category = '';
-        if (!p.title) p.title = '';
-        if (!p.subtitle) p.subtitle = '';
-        if (!p.tagline) p.tagline = '';
-      });
-    }
-    Object.assign(S, loaded);
-    return true;
-  } catch(e) {
-    return false;
-  }
-}
-
-let saveToastTimer = null;
-function showSaveToast() {
-  const t = document.getElementById('saveToast');
-  if (!t) return;
-  t.classList.add('show');
-  clearTimeout(saveToastTimer);
-  saveToastTimer = setTimeout(() => t.classList.remove('show'), 2000);
-}
 
 // ── 배경 팔레트 ──────────────────────────────────────────────────
 const PALETTES = {
@@ -216,10 +298,7 @@ function curPage() { return S.pages[S.cur]; }
 
 function addPage() {
   const id = Date.now();
-  S.pages.push({
-    id, type: 'menu',
-    category: 'MENU', title: '', subtitle: '', tagline: '', items: []
-  });
+  S.pages.push({ id, type: 'menu', category: 'MENU', title: '', subtitle: '', tagline: '', items: [] });
   S.cur = S.pages.length - 1;
   renderAll();
   saveState();
@@ -245,6 +324,25 @@ function renderAll() {
   renderItems();
   renderPreview();
   renderPageNav();
+}
+
+// 다른 사람 변경사항 수신 시 UI 전체 갱신
+function syncUIFromState() {
+  const fontEl = document.getElementById('eFont');
+  if (fontEl) fontEl.value = S.font;
+  const fsMap = { title:'fsTitle', cat:'fsCat', sub:'fsSub', name:'fsName', desc:'fsDesc', price:'fsPrice' };
+  const vsMap = { title:'vTitle',  cat:'vCat',  sub:'vSub',  name:'vName',  desc:'vDesc',  price:'vPrice'  };
+  for (const [key, elId] of Object.entries(fsMap)) {
+    const el = document.getElementById(elId);
+    if (el) el.value = S.fs[key];
+    const vEl = document.getElementById(vsMap[key]);
+    if (vEl) vEl.textContent = S.fs[key];
+  }
+  document.querySelectorAll('.layout-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.layout === S.layout);
+  });
+  initSwatches();
+  renderAll();
 }
 
 function renderPageTabs() {
@@ -280,12 +378,11 @@ function renderPageNav() {
   `;
 }
 
-// ── 에디터 헤더 (페이지별 필드) ──────────────────────────────────
+// ── 에디터 헤더 (페이지별) ───────────────────────────────────────
 function renderEditorHeader() {
   const el = document.getElementById('editorHeader');
   const p = curPage();
   const isCover = p.type === 'cover';
-
   el.innerHTML = `
     <div class="page-type-row">
       <span class="section-title" style="margin-bottom:0">페이지 설정</span>
@@ -315,8 +412,7 @@ function renderEditorHeader() {
 }
 
 function togglePageType(isCover) {
-  const p = curPage();
-  p.type = isCover ? 'cover' : 'menu';
+  curPage().type = isCover ? 'cover' : 'menu';
   renderAll();
   saveState();
 }
@@ -333,7 +429,6 @@ function renderItems() {
   const addBtn    = document.querySelector('.add-btn');
   const p = curPage();
 
-  // 표지 페이지에서는 메뉴 아이템 UI 숨김
   if (p.type === 'cover') {
     container.innerHTML = '<div class="cover-notice">표지 페이지에는 메뉴 아이템이 없습니다.</div>';
     if (addBtn) addBtn.style.display = 'none';
@@ -343,7 +438,6 @@ function renderItems() {
 
   container.innerHTML = '';
   const items = p.items;
-
   items.forEach((item, i) => {
     const div = document.createElement('div');
     div.className = 'item-card';
@@ -452,7 +546,7 @@ function renderPreview() {
 
   const el  = document.getElementById('menuPreview');
   const cls = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' }[S.layout] || 'lc';
-  el.className    = cls;
+  el.className         = cls;
   el.style.background  = S.bg;
   el.style.fontFamily  = S.font;
 
@@ -466,7 +560,6 @@ function renderPreview() {
     if (S.layout === 'bistro')  el.innerHTML = tplBistro(p);
     if (S.layout === 'minimal') el.innerHTML = tplMinimal(p);
   }
-
   scalePreview();
 }
 
@@ -477,13 +570,12 @@ function imgTag(item, imgCls, phCls, phIcon = '☕') {
 }
 function num(i) { return String(i+1).padStart(2,'0'); }
 
-// ── 커버 템플릿 (레이아웃별 스타일 적용) ─────────────────────────
+// ── 커버 템플릿 ───────────────────────────────────────────────────
 function tplCover(p) {
   const layoutCoverClass = {
     coffee:'cover-coffee', modern:'cover-modern', elegant:'cover-elegant',
     chalk:'cover-chalk', bistro:'cover-bistro', minimal:'cover-minimal'
   }[S.layout] || 'cover-coffee';
-
   return `
     <div class="cover-wrap ${layoutCoverClass}">
       <div class="cover-inner">
@@ -580,7 +672,6 @@ function tplChalk(p) {
           <hr class="m-divider">${rows}`;
 }
 
-// ── 비스트로 템플릿 (따뜻한 빈티지 레스토랑 스타일) ──────────────
 function tplBistro(p) {
   const { category: cat, title, subtitle: sub, items } = p;
   const rows = items.map((it, i) => `
@@ -595,7 +686,6 @@ function tplBistro(p) {
           ${it.showPrice!==false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${it.price}</span>` : ''}
         </div>
         ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
-        <div class="m-dots"></div>
       </div>
     </div>`).join('');
   return `
@@ -607,7 +697,6 @@ function tplBistro(p) {
     <div class="lb-body">${rows}</div>`;
 }
 
-// ── 미니멀 템플릿 (깔끔한 종이 스타일) ───────────────────────────
 function tplMinimal(p) {
   const { category: cat, title, subtitle: sub, items } = p;
   const rows = items.map((it, i) => `
@@ -691,7 +780,7 @@ function toggleApiKeyBox() {
     const saved = localStorage.getItem('pixabay_key') || '';
     document.getElementById('pixabayKey').value = saved ? '●'.repeat(20) : '';
     const status = document.getElementById('apiKeyStatus');
-    status.textContent = saved ? '✓ API 키 저장됨 — Pixabay 고화질 검색 사용 중' : '키 없음 — 기본 이미지 검색 사용 중';
+    status.textContent = saved ? '✓ API 키 저장됨' : '키 없음 — 기본 이미지 검색 사용 중';
     status.style.color = saved ? '#16a34a' : '#888';
   }
 }
@@ -707,7 +796,7 @@ function savePixabayKey() {
     return;
   }
   localStorage.setItem('pixabay_key', key);
-  status.textContent = '✓ 저장 완료! 다음 검색부터 Pixabay 고화질 사진이 사용됩니다.';
+  status.textContent = '✓ 저장 완료!';
   status.style.color = '#16a34a';
 }
 
@@ -733,9 +822,7 @@ function makeImgEl(src, alt) {
 async function doSearch() {
   const raw = document.getElementById('searchQ').value.trim();
   if (!raw) return;
-
   const { text: q, translated, original } = translateQuery(raw);
-
   const notice = document.getElementById('translateNotice');
   if (translated) {
     notice.style.display = 'block';
@@ -743,14 +830,11 @@ async function doSearch() {
   } else {
     notice.style.display = 'none';
   }
-
   const grid = document.getElementById('imgGrid');
   grid.innerHTML = Array(9).fill('<div class="img-skeleton"></div>').join('');
   await new Promise(r => setTimeout(r, 250));
-
   const pixabayKey = (BUILTIN_KEY && BUILTIN_KEY !== '56027271-2b10af9f46b343d248a57b6ac')
-    ? BUILTIN_KEY
-    : (localStorage.getItem('pixabay_key') || '');
+    ? BUILTIN_KEY : (localStorage.getItem('pixabay_key') || '');
   if (pixabayKey) {
     await searchPixabay(q, grid, pixabayKey, translated);
   } else {
@@ -776,14 +860,12 @@ async function searchPixabay(q, grid, key, isTranslated = false) {
     const data = await res.json();
     grid.innerHTML = '';
     if (!data.hits?.length) {
-      grid.innerHTML = `<div style="grid-column:span 3;text-align:center;padding:24px;color:#888;font-size:13px">검색 결과 없음. 다른 키워드를 시도해보세요.</div>`;
+      grid.innerHTML = `<div style="grid-column:span 3;text-align:center;padding:24px;color:#888;font-size:13px">검색 결과 없음.</div>`;
       return;
     }
     data.hits.forEach(hit => grid.appendChild(makeImgEl(hit.webformatURL, q)));
   } catch {
     searchLoremflickr(q, grid);
-    const status = document.getElementById('apiKeyStatus');
-    if (status) { status.textContent = '⚠ API 키 오류. 기본 검색으로 대체됩니다.'; status.style.color = '#dc2626'; }
   }
 }
 
@@ -819,14 +901,12 @@ async function confirmImage() {
     if (item) break;
   }
   if (!item) return;
-
   if (pendingImg.type === 'url' && !pendingImg.url.startsWith('data:')) {
     try { item.img = await toBase64(pendingImg.url); }
     catch { item.img = pendingImg.url; }
   } else {
     item.img = pendingImg.url;
   }
-
   renderItems();
   renderPreview();
   saveState();
@@ -844,46 +924,39 @@ async function toBase64(url) {
   });
 }
 
-// ── PDF 내보내기 (전체 페이지) ───────────────────────────────────
+// ── PDF 내보내기 ─────────────────────────────────────────────────
 async function exportPDF() {
   const btn = document.querySelector('.pdf-btn');
   btn.textContent = '⏳ 생성 중...';
   btn.disabled = true;
-
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pdfW = pdf.internal.pageSize.getWidth();
   const pdfH = pdf.internal.pageSize.getHeight();
-
   const savedPage = S.cur;
   const scaler    = document.querySelector('.preview-scaler');
   const preview   = document.getElementById('menuPreview');
-
   try {
     for (let i = 0; i < S.pages.length; i++) {
       S.cur = i;
       renderPreview();
       scaler.style.transform = 'scale(1)';
       await new Promise(r => setTimeout(r, 150));
-
       const canvas = await html2canvas(preview, {
         scale: 2, useCORS: true, allowTaint: false,
         backgroundColor: S.bg, logging: false,
       });
-
       if (i > 0) pdf.addPage();
       const ratio = Math.min(pdfW / canvas.width, pdfH / canvas.height);
       const x = (pdfW - canvas.width * ratio) / 2;
       const y = (pdfH - canvas.height * ratio) / 2;
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, y, canvas.width * ratio, canvas.height * ratio);
     }
-
     const titlePage = S.pages.find(p => p.title) || S.pages[0];
     pdf.save(`${titlePage.title || 'menu'}_menu.pdf`);
   } catch (e) {
     alert('PDF 생성 실패: ' + e.message);
   }
-
   S.cur = savedPage;
   renderPreview();
   scalePreview();
@@ -892,16 +965,19 @@ async function exportPDF() {
 }
 
 // ── 초기화 ───────────────────────────────────────────────────────
-function init() {
-  loadState();
+async function init() {
+  // Supabase 먼저 초기화 (실시간 구독 시작)
+  initSupabase();
 
-  // 폰트 드롭다운 복원
+  // 상태 불러오기 (Supabase 우선, 없으면 localStorage)
+  await loadState();
+
+  // UI에 상태 반영
   const fontEl = document.getElementById('eFont');
   if (fontEl) fontEl.value = S.font;
 
-  // 글씨 크기 슬라이더 복원
   const fsMap = { title:'fsTitle', cat:'fsCat', sub:'fsSub', name:'fsName', desc:'fsDesc', price:'fsPrice' };
-  const vsMap = { title:'vTitle', cat:'vCat', sub:'vSub', name:'vName', desc:'vDesc', price:'vPrice' };
+  const vsMap = { title:'vTitle',  cat:'vCat',  sub:'vSub',  name:'vName',  desc:'vDesc',  price:'vPrice'  };
   for (const [key, elId] of Object.entries(fsMap)) {
     const el = document.getElementById(elId);
     if (el) el.value = S.fs[key];
@@ -909,7 +985,6 @@ function init() {
     if (vEl) vEl.textContent = S.fs[key];
   }
 
-  // 레이아웃 버튼 복원
   document.querySelectorAll('.layout-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.layout === S.layout);
   });
