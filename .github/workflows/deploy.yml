@@ -14,9 +14,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject Pixabay API key from Secrets
+      - name: Inject secrets from GitHub Secrets
         run: |
           sed -i "s/PIXABAY_KEY_PLACEHOLDER/${{ secrets.PIXABAY_API_KEY }}/g" app.js
+          sed -i "s|SUPABASE_URL_PLACEHOLDER|${{ secrets.SUPABASE_URL }}|g" app.js
+          sed -i "s/SUPABASE_ANON_KEY_PLACEHOLDER/${{ secrets.SUPABASE_ANON_KEY }}/g" app.js
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v3
