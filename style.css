@@ -15,6 +15,8 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .sync-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#ddd;padding:6px 13px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:background .2s;white-space:nowrap}
 .sync-btn:hover{background:rgba(255,255,255,.18)}
 .sync-btn:disabled{opacity:.5;cursor:not-allowed}
+.sync-btn-save{background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.5);color:#93c5fd}
+.sync-btn-save:hover{background:rgba(96,165,250,.32)}
 .pdf-btn{margin-left:4px;background:#4ade80;border:none;color:#1a2e1a;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;transition:background .2s;white-space:nowrap}
 .pdf-btn:hover{background:#22c55e}
 

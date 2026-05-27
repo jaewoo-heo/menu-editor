@@ -6,13 +6,8 @@ const STORAGE_KEY       = 'menuEditor_v1';
 const SHARED_ROW_ID     = 'shared';
 
 // ── Supabase 클라이언트 ──────────────────────────────────────────
+// 자동 동기화 제거 — 저장/불러오기 버튼으로만 서버와 교신
 let db = null;
-let realtimeChannel  = null;
-let _lastSaveTime    = 0;     // 내 저장 타임스탬프 (realtime echo 무시용)
-let _reconnectTimer  = null;  // 자동 재연결 타이머
-let _reconnectCount  = 0;     // 재연결 시도 횟수 (최대 3회 후 포기)
-let _pollTimer       = null;  // 폴링 타이머
-const _pollInterval  = 30000; // 30초마다 폴링
 
 function setSyncStatus(text, state) {
   const el = document.getElementById('syncStatus');
@@ -21,110 +16,59 @@ function setSyncStatus(text, state) {
   el.className   = 'sync-status' + (state ? ' ' + state : '');
 }
 
-// ── 실시간 채널 구독 (최대 3회 재시도 후 폴링 전용 모드로 전환) ──
-function subscribeRealtime() {
-  if (!db) return;
-  if (realtimeChannel) {
-    realtimeChannel.unsubscribe();
-    realtimeChannel = null;
-  }
-
-  realtimeChannel = db.channel('menu_realtime')
-    .on('postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'menu_state', filter: `id=eq.${SHARED_ROW_ID}` },
-      (payload) => {
-        const eventTime = new Date(payload.new?.updated_at).getTime();
-        if (Date.now() - _lastSaveTime < 1000 && Math.abs(eventTime - _lastSaveTime) < 1500) return;
-        const incoming = payload.new?.data;
-        if (incoming && Object.keys(incoming).length > 0) {
-          applyState(incoming);
-          syncUIFromState();
-          showToast('🔄 다른 사용자가 수정했습니다', 3000);
-        }
-      })
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        _reconnectCount = 0;
-        setSyncStatus('🟢 실시간 연결됨', 'connected');
-        clearTimeout(_reconnectTimer);
-      } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-        _reconnectCount++;
-        if (_reconnectCount <= 3) {
-          // 3회까지만 재시도 (5초 간격)
-          setSyncStatus(`🟡 재연결 중... (${_reconnectCount}/3)`, 'reconnecting');
-          clearTimeout(_reconnectTimer);
-          _reconnectTimer = setTimeout(() => subscribeRealtime(), 5000);
-        } else {
-          // 3회 실패 → WebSocket 차단으로 판단, 폴링 전용 모드
-          realtimeChannel?.unsubscribe();
-          realtimeChannel = null;
-          setSyncStatus('🟡 폴링 모드 (30초)', 'reconnecting');
-          // 폴링은 이미 실행 중 — 추가 작업 불필요
-        }
-      }
-    });
-}
-
 function initSupabase() {
   if (!SUPABASE_URL      || SUPABASE_URL.includes('PLACEHOLDER') ||
       !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('PLACEHOLDER')) {
     setSyncStatus('⚪ 로컬 모드', 'local');
     return;
   }
-
   db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  subscribeRealtime();
-  startPolling(); // REST API 기반 폴링 — WebSocket 차단 환경에서도 동작
-
-  window.addEventListener('beforeunload', () => {
-    clearTimeout(_reconnectTimer);
-    clearInterval(_pollTimer);
-    realtimeChannel?.unsubscribe();
-  });
+  setSyncStatus('☁️ 서버 연결됨', 'connected');
 }
 
-// ── 폴링 백업: Realtime이 불안정할 때 30초마다 서버 변경사항 체크 ──
-async function startPolling() {
-  if (!db) return;
-  clearInterval(_pollTimer);
-  _pollTimer = setInterval(async () => {
-    try {
-      const { data, error } = await db
-        .from('menu_state').select('data,updated_at').eq('id', SHARED_ROW_ID).single();
-      if (error || !data?.data) return;
-      // 서버 데이터가 내 마지막 저장보다 최신이면 반영
-      const serverTime = new Date(data.updated_at).getTime();
-      if (serverTime > _lastSaveTime + 2000 && Object.keys(data.data).length > 0) {
-        applyState(data.data);
-        syncUIFromState();
-        showToast('🔄 서버 변경사항 반영됨', 2500);
-      }
-    } catch {}
-  }, _pollInterval);
-}
-
-// ── 수동 동기화 (서버 최신 데이터 가져오기 + 내 변경사항 올리기) ──
-async function syncNow() {
-  if (!db) { showToast('⚪ 로컬 모드 — 서버 연결 없음', 2500); return; }
-  const btn = document.getElementById('syncBtn');
+// ── 서버에 저장 (수동) ───────────────────────────────────────────
+async function saveToCloud() {
+  if (!db) { showToast('⚪ 로컬 모드 — 서버 없음', 2000); return; }
+  const btn = document.getElementById('cloudSaveBtn');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
-    // 1) 내 현재 상태 서버에 저장
-    await saveState();
-    // 2) 서버 최신 데이터 가져오기
-    const { data, error } = await db
-      .from('menu_state').select('data').eq('id', SHARED_ROW_ID).single();
-    if (!error && data?.data && Object.keys(data.data).length > 0) {
-      applyState(data.data);
-      syncUIFromState();
-    }
-    // 3) 실시간 채널이 끊겼으면 재연결 시도
-    subscribeRealtime();
-    showToast('☁️ 동기화 완료', 2000);
+    const now = new Date().toISOString();
+    const { error } = await db.from('menu_state')
+      .upsert({ id: SHARED_ROW_ID, data: S, updated_at: now });
+    if (error) throw error;
+    showToast('☁️ 서버에 저장됨', 2000);
   } catch (e) {
-    showToast('❌ 동기화 실패: ' + e.message, 3000);
+    showToast('❌ 서버 저장 실패: ' + (e?.message || e), 3000);
+    setSyncStatus('🔴 서버 오류', 'error');
   } finally {
-    if (btn) { btn.textContent = '☁️ 동기화'; btn.disabled = false; }
+    if (btn) { btn.textContent = '☁️ 서버 저장'; btn.disabled = false; }
+  }
+}
+
+// ── 서버에서 불러오기 (수동) ─────────────────────────────────────
+async function loadFromCloud() {
+  if (!db) { showToast('⚪ 로컬 모드 — 서버 없음', 2000); return; }
+  const btn = document.getElementById('cloudLoadBtn');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    const { data, error } = await db
+      .from('menu_state').select('data,updated_at').eq('id', SHARED_ROW_ID).single();
+    if (error) throw error;
+    if (!data?.data || Object.keys(data.data).length === 0) {
+      showToast('서버에 저장된 데이터가 없습니다', 2500); return;
+    }
+    const savedAt = new Date(data.updated_at).toLocaleString('ko-KR');
+    const ok = confirm(`서버 데이터를 불러오면 현재 작업이 덮어씌워집니다.\n\n마지막 저장: ${savedAt}\n\n계속하시겠습니까?`);
+    if (!ok) return;
+    applyState(data.data);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
+    syncUIFromState();
+    showToast('📥 서버 데이터 불러옴', 2500);
+  } catch (e) {
+    showToast('❌ 불러오기 실패: ' + (e?.message || e), 3000);
+    setSyncStatus('🔴 서버 오류', 'error');
+  } finally {
+    if (btn) { btn.textContent = '📥 불러오기'; btn.disabled = false; }
   }
 }
 
@@ -156,48 +100,19 @@ function scheduleSave() {
   _saveTimer = setTimeout(saveState, 800);
 }
 
-async function saveState() {
+function saveState() {
   clearTimeout(_saveTimer);
+  // localStorage에만 자동 저장 — 서버 저장은 '☁️ 서버 저장' 버튼으로만
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
-
-  if (db) {
-    const now = new Date().toISOString();
-    _lastSaveTime = Date.now();
-    try {
-      const { error } = await db.from('menu_state').upsert({ id: SHARED_ROW_ID, data: S, updated_at: now });
-      if (error) throw error;
-      showToast('✓ 저장됨 (서버)', 2000);
-      return;
-    } catch (e) {
-      // ERR_NAME_NOT_RESOLVED 등 네트워크 오류 → 상태 표시 업데이트
-      const isNetErr = e?.message?.includes('ERR_NAME') || e?.message?.includes('fetch') || e?.message?.includes('network');
-      if (isNetErr) setSyncStatus('🔴 서버 연결 불가', 'error');
-      console.warn('Supabase 저장 실패:', e?.message || e);
-    }
-  }
-  showToast('✓ 저장됨 (로컬)', 2000);
+  showToast('✓ 저장됨', 2000);
 }
 
-async function loadState() {
+function loadState() {
+  // 시작 시 localStorage만 복원 — 서버 불러오기는 '📥 불러오기' 버튼으로만
   try {
     const cached = localStorage.getItem(STORAGE_KEY);
     if (cached) applyState(JSON.parse(cached));
   } catch {}
-
-  if (db) {
-    try {
-      const { data, error } = await db
-        .from('menu_state').select('data').eq('id', SHARED_ROW_ID).single();
-      if (!error && data?.data && Object.keys(data.data).length > 0) {
-        applyState(data.data);
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
-        return true;
-      }
-    } catch (e) {
-      console.warn('Supabase 불러오기 실패 (로컬캐시 사용):', e);
-    }
-  }
-  return false;
 }
 
 // ── 토스트 알림 (통합) ───────────────────────────────────────────
@@ -1088,10 +1003,10 @@ async function exportPDF() {
 }
 
 // ── 초기화 ───────────────────────────────────────────────────────
-async function init() {
-  initSupabase();
-  await loadState();
-  syncUIFromState();  // 상태 → UI 반영 (중복 코드 제거)
+function init() {
+  initSupabase();    // 서버 연결 확인만 (자동 불러오기 없음)
+  loadState();       // localStorage 복원
+  syncUIFromState(); // 상태 → UI 반영
 }
 
 init();
