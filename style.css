@@ -19,6 +19,7 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .sync-status{font-size:11px;color:#888;white-space:nowrap;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,.07)}
 .sync-status.connected{color:#4ade80}
 .sync-status.error{color:#f87171}
+.sync-status.local{color:#888}
 
 /* SAVE TOAST */
 .save-toast{font-size:12px;color:#4ade80;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
