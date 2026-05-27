@@ -10,9 +10,19 @@ let db = null;
 let realtimeChannel = null;
 let _lastSaveTime   = 0;   // 내 저장 타임스탬프 (realtime echo 무시용)
 
+function setSyncStatus(text, state) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.className   = 'sync-status' + (state ? ' ' + state : '');
+}
+
 function initSupabase() {
-  if (!SUPABASE_URL || SUPABASE_URL === 'SUPABASE_URL_PLACEHOLDER') return;
-  if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === 'SUPABASE_ANON_KEY_PLACEHOLDER') return;
+  if (!SUPABASE_URL || SUPABASE_URL === 'SUPABASE_URL_PLACEHOLDER' ||
+      !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === 'SUPABASE_ANON_KEY_PLACEHOLDER') {
+    setSyncStatus('⚪ 로컬 모드', 'local');
+    return;
+  }
 
   db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -32,14 +42,10 @@ function initSupabase() {
         }
       })
     .subscribe((status) => {
-      const el = document.getElementById('syncStatus');
-      if (!el) return;
       if (status === 'SUBSCRIBED') {
-        el.textContent = '🟢 실시간 연결됨';
-        el.className   = 'sync-status connected';
-      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-        el.textContent = '🔴 연결 끊김';
-        el.className   = 'sync-status error';
+        setSyncStatus('🟢 실시간 연결됨', 'connected');
+      } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+        setSyncStatus('🔴 연결 끊김', 'error');
       }
     });
 
@@ -402,15 +408,17 @@ function renderEditorHeader() {
         <span class="type-toggle-chip">${isCover?'📖 표지':'📋 메뉴'}</span>
       </label>
     </div>
+    <div class="form-group" style="margin-top:10px">
+      <label>${isCover ? '태그라인 (최상단 작은 글씨)' : '카테고리'}</label>
+      <input value="${esc(isCover ? p.tagline : p.category)}"
+             oninput="setPageField('${isCover ? 'tagline' : 'category'}', this.value)"
+             placeholder="${isCover ? 'Est. 2024' : ''}">
+    </div>
     ${isCover ? `
-    <div class="form-group" style="margin-top:10px">
-      <label>태그라인</label>
-      <input value="${esc(p.tagline)}" oninput="setPageField('tagline', this.value)" placeholder="Est. 2024">
-    </div>` : `
-    <div class="form-group" style="margin-top:10px">
-      <label>카테고리</label>
-      <input value="${esc(p.category)}" oninput="setPageField('category', this.value)">
-    </div>`}
+    <div class="form-group">
+      <label>스크립트 텍스트 <span style="font-size:10px;color:#aaa">(special 자리)</span></label>
+      <input value="${esc(p.category)}" oninput="setPageField('category', this.value)" placeholder="special">
+    </div>` : ''}
     <div class="form-group">
       <label>메인 제목</label>
       <input value="${esc(p.title)}" oninput="setPageField('title', this.value)">
