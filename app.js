@@ -1,46 +1,50 @@
 // GitHub Actions 배포 시 Secrets의 키로 자동 치환됨
-const BUILTIN_KEY      = '56027271-2b10af9f46b343d248a57b6ac';
-const SUPABASE_URL     = 'https://vwnkwfplqiijsxzyiscg.supabase.co';
+const BUILTIN_KEY       = '56027271-2b10af9f46b343d248a57b6ac';
+const SUPABASE_URL      = 'https://vwnkwfplqiijsxzyiscg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3bmt3ZnBscWlqanN4enlpc2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MzQyOTQsImV4cCI6MjA5NTQxMDI5NH0._yyxBnheH30gp2PCXmCVLxmAi4VTDO0WCmGKGLnCTgk';
-const STORAGE_KEY      = 'menuEditor_v1';
-const SHARED_ROW_ID    = 'shared';
+const STORAGE_KEY       = 'menuEditor_v1';
+const SHARED_ROW_ID     = 'shared';
 
 // ── Supabase 클라이언트 ──────────────────────────────────────────
-let db = null;        // supabase client
-let isSyncing = false; // 내 저장 중엔 realtime 무시
+let db = null;
+let realtimeChannel = null;
+let _lastSaveTime   = 0;   // 내 저장 타임스탬프 (realtime echo 무시용)
 
 function initSupabase() {
-  const url = SUPABASE_URL;
-  const key = SUPABASE_ANON_KEY;
-  if (!url || url === 'https://vwnkwfplqiijsxzyiscg.supabase.co') return;
-  if (!key || key === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3bmt3ZnBscWlqanN4enlpc2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MzQyOTQsImV4cCI6MjA5NTQxMDI5NH0._yyxBnheH30gp2PCXmCVLxmAi4VTDO0WCmGKGLnCTgk') return;
+  if (!SUPABASE_URL || SUPABASE_URL === 'https://vwnkwfplqiijsxzyiscg.supabase.co') return;
+  if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3bmt3ZnBscWlqanN4enlpc2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MzQyOTQsImV4cCI6MjA5NTQxMDI5NH0._yyxBnheH30gp2PCXmCVLxmAi4VTDO0WCmGKGLnCTgk') return;
 
-  db = window.supabase.createClient(url, key);
+  db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // 실시간 구독 — 다른 사람이 저장하면 자동 반영
-  db.channel('menu_realtime')
+  realtimeChannel = db.channel('menu_realtime')
     .on('postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'menu_state', filter: `id=eq.${SHARED_ROW_ID}` },
       (payload) => {
-        if (isSyncing) return;           // 내가 방금 저장한 이벤트면 무시
+        // 내가 저장한 이벤트는 무시 (1초 이내 에코)
+        const eventTime = new Date(payload.new?.updated_at).getTime();
+        if (Date.now() - _lastSaveTime < 1000 && Math.abs(eventTime - _lastSaveTime) < 1500) return;
+
         const incoming = payload.new?.data;
         if (incoming && Object.keys(incoming).length > 0) {
           applyState(incoming);
           syncUIFromState();
-          showSyncToast('🔄 다른 사용자가 수정했습니다');
+          showToast('🔄 다른 사용자가 수정했습니다', 3000);
         }
       })
     .subscribe((status) => {
       const el = document.getElementById('syncStatus');
       if (!el) return;
       if (status === 'SUBSCRIBED') {
-        el.textContent  = '🟢 실시간 연결됨';
-        el.className    = 'sync-status connected';
+        el.textContent = '🟢 실시간 연결됨';
+        el.className   = 'sync-status connected';
       } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-        el.textContent  = '🔴 연결 끊김';
-        el.className    = 'sync-status error';
+        el.textContent = '🔴 연결 끊김';
+        el.className   = 'sync-status error';
       }
     });
+
+  // 탭 닫힐 때 채널 정리
+  window.addEventListener('beforeunload', () => realtimeChannel?.unsubscribe());
 }
 
 // ── 상태 적용 (마이그레이션 포함) ───────────────────────────────
@@ -56,33 +60,50 @@ function applyState(data) {
       if (!p.items)    p.items    = [];
     });
   }
-  // cur이 범위 초과하면 보정
   if (data.cur !== undefined && data.pages && data.cur >= data.pages.length) {
     data.cur = data.pages.length - 1;
   }
   Object.assign(S, data);
 }
 
-// ── localStorage 저장 / 불러오기 ─────────────────────────────────
+// ── 저장 (디바운스) ──────────────────────────────────────────────
+// 키 입력 등 연속 이벤트: scheduleSave() → 800ms 후 saveState()
+// 버튼 클릭 등 단발 이벤트: saveState() 직접 호출
+let _saveTimer = null;
+function scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveState, 800);
+}
+
+async function saveState() {
+  clearTimeout(_saveTimer);
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
+
+  if (db) {
+    const now = new Date().toISOString();
+    _lastSaveTime = Date.now();
+    try {
+      await db.from('menu_state').upsert({ id: SHARED_ROW_ID, data: S, updated_at: now });
+    } catch (e) {
+      console.warn('Supabase 저장 실패:', e);
+    }
+  }
+  showToast('✓ 저장됨', 2000);
+}
+
 async function loadState() {
-  // 1) localStorage 캐시로 빠른 초기 로드
   try {
     const cached = localStorage.getItem(STORAGE_KEY);
     if (cached) applyState(JSON.parse(cached));
   } catch {}
 
-  // 2) Supabase에서 최신 데이터 덮어쓰기
   if (db) {
     try {
       const { data, error } = await db
-        .from('menu_state')
-        .select('data')
-        .eq('id', SHARED_ROW_ID)
-        .single();
+        .from('menu_state').select('data').eq('id', SHARED_ROW_ID).single();
       if (!error && data?.data && Object.keys(data.data).length > 0) {
         applyState(data.data);
-        // 캐시 갱신
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
         return true;
       }
     } catch (e) {
@@ -92,46 +113,15 @@ async function loadState() {
   return false;
 }
 
-async function saveState() {
-  // localStorage 즉시 저장
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
-
-  // Supabase upsert
-  if (db) {
-    isSyncing = true;
-    try {
-      await db.from('menu_state').upsert({
-        id: SHARED_ROW_ID,
-        data: S,
-        updated_at: new Date().toISOString()
-      });
-    } catch (e) {
-      console.warn('Supabase 저장 실패:', e);
-    } finally {
-      setTimeout(() => { isSyncing = false; }, 600);
-    }
-  }
-  showSaveToast();
-}
-
-// ── 토스트 알림 ──────────────────────────────────────────────────
-let saveToastTimer = null;
-function showSaveToast() {
-  const t = document.getElementById('saveToast');
-  if (!t) return;
-  t.textContent = '✓ 저장됨';
-  t.classList.add('show');
-  clearTimeout(saveToastTimer);
-  saveToastTimer = setTimeout(() => t.classList.remove('show'), 2000);
-}
-
-function showSyncToast(msg) {
+// ── 토스트 알림 (통합) ───────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg, duration = 2000) {
   const t = document.getElementById('saveToast');
   if (!t) return;
   t.textContent = msg;
   t.classList.add('show');
-  clearTimeout(saveToastTimer);
-  saveToastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), duration);
 }
 
 function toggleSection(bodyId, header) {
@@ -194,14 +184,15 @@ const KO_EN = {
   '망고':'mango','복숭아':'peach','자몽':'grapefruit',
   '레몬':'lemon','오렌지':'orange','치즈':'cheese',
 };
+// 매 검색마다 정렬하지 않도록 모듈 로드 시 1회만 계산
+const KO_EN_KEYS = Object.keys(KO_EN).sort((a, b) => b.length - a.length);
 
 function translateQuery(q) {
   if (!/[가-힣]/.test(q)) return { text: q, translated: false };
   if (KO_EN[q]) return { text: KO_EN[q], translated: true, original: q };
   let result = q;
-  const keys = Object.keys(KO_EN).sort((a,b) => b.length - a.length);
-  let found = false;
-  for (const k of keys) {
+  let found  = false;
+  for (const k of KO_EN_KEYS) {
     if (result.includes(k)) { result = result.replace(k, KO_EN[k]); found = true; }
   }
   if (found) return { text: result, translated: true, original: q };
@@ -249,7 +240,12 @@ const PALETTES = {
 };
 const DEFAULT_BG = {
   coffee:'#F5EFE6', modern:'#0a0a0a', elegant:'#FDFAF5',
-  chalk:'#2C4A3E', bistro:'#1C1208', minimal:'#FFFFFF'
+  chalk:'#2C4A3E',  bistro:'#1C1208', minimal:'#FFFFFF'
+};
+// 커버 CSS 클래스 매핑 — tplCover 호출 시마다 객체 재생성 방지
+const COVER_CSS = {
+  coffee:'cover-coffee', modern:'cover-modern', elegant:'cover-elegant',
+  chalk:'cover-chalk',   bistro:'cover-bistro', minimal:'cover-minimal'
 };
 
 function initSwatches() {
@@ -280,6 +276,13 @@ function setLayout(l, btn) {
   btn.classList.add('active');
   S.bg = DEFAULT_BG[l];
   initSwatches();
+  renderPreview();
+  saveState();
+}
+
+// ── 폰트 ─────────────────────────────────────────────────────────
+function onFontChange(val) {
+  S.font = val;
   renderPreview();
   saveState();
 }
@@ -326,23 +329,32 @@ function renderAll() {
   renderPageNav();
 }
 
-// 다른 사람 변경사항 수신 시 UI 전체 갱신
+// ── 다른 사용자 변경 수신 시 UI 동기화 ──────────────────────────
 function syncUIFromState() {
   const fontEl = document.getElementById('eFont');
   if (fontEl) fontEl.value = S.font;
+
   const fsMap = { title:'fsTitle', cat:'fsCat', sub:'fsSub', name:'fsName', desc:'fsDesc', price:'fsPrice' };
   const vsMap = { title:'vTitle',  cat:'vCat',  sub:'vSub',  name:'vName',  desc:'vDesc',  price:'vPrice'  };
   for (const [key, elId] of Object.entries(fsMap)) {
-    const el = document.getElementById(elId);
-    if (el) el.value = S.fs[key];
-    const vEl = document.getElementById(vsMap[key]);
-    if (vEl) vEl.textContent = S.fs[key];
+    const el  = document.getElementById(elId);  if (el)  el.value       = S.fs[key];
+    const vEl = document.getElementById(vsMap[key]); if (vEl) vEl.textContent = S.fs[key];
   }
   document.querySelectorAll('.layout-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.layout === S.layout);
   });
   initSwatches();
-  renderAll();
+
+  // 사용자가 입력 중이면 에디터 패널은 건드리지 않고 프리뷰만 갱신
+  const focused = document.activeElement;
+  const userTyping = focused && (focused.tagName === 'INPUT' || focused.tagName === 'TEXTAREA' || focused.tagName === 'SELECT');
+  if (userTyping) {
+    renderPreview();
+    renderPageTabs();
+    renderPageNav();
+  } else {
+    renderAll();
+  }
 }
 
 function renderPageTabs() {
@@ -352,11 +364,10 @@ function renderPageTabs() {
     const tab = document.createElement('div');
     tab.className = 'page-tab' + (i === S.cur ? ' active' : '');
     tab.onclick = () => setPage(i);
-    const label = p.type === 'cover' ? '📖 표지' : `페이지 ${i}`;
-    tab.innerHTML = label;
+    tab.innerHTML = p.type === 'cover' ? '📖 표지' : `페이지 ${i}`;
     if (S.pages.length > 1) {
       const del = document.createElement('span');
-      del.className = 'page-tab-del';
+      del.className   = 'page-tab-del';
       del.textContent = ' ✕';
       del.onclick = (e) => deletePage(i, e);
       tab.appendChild(del);
@@ -381,7 +392,7 @@ function renderPageNav() {
 // ── 에디터 헤더 (페이지별) ───────────────────────────────────────
 function renderEditorHeader() {
   const el = document.getElementById('editorHeader');
-  const p = curPage();
+  const p  = curPage();
   const isCover = p.type === 'cover';
   el.innerHTML = `
     <div class="page-type-row">
@@ -391,11 +402,15 @@ function renderEditorHeader() {
         <span class="type-toggle-chip">${isCover?'📖 표지':'📋 메뉴'}</span>
       </label>
     </div>
+    ${isCover ? `
     <div class="form-group" style="margin-top:10px">
-      <label>${isCover ? '태그라인 (상단)' : '카테고리'}</label>
-      <input value="${esc(isCover ? p.tagline : p.category)}"
-             oninput="setPageField('${isCover?'tagline':'category'}', this.value)">
-    </div>
+      <label>태그라인</label>
+      <input value="${esc(p.tagline)}" oninput="setPageField('tagline', this.value)" placeholder="Est. 2024">
+    </div>` : `
+    <div class="form-group" style="margin-top:10px">
+      <label>카테고리</label>
+      <input value="${esc(p.category)}" oninput="setPageField('category', this.value)">
+    </div>`}
     <div class="form-group">
       <label>메인 제목</label>
       <input value="${esc(p.title)}" oninput="setPageField('title', this.value)">
@@ -404,10 +419,6 @@ function renderEditorHeader() {
       <label>부제목</label>
       <input value="${esc(p.subtitle)}" oninput="setPageField('subtitle', this.value)">
     </div>
-    ${isCover ? `<div class="form-group">
-      <label>하단 태그라인</label>
-      <input value="${esc(p.tagline)}" oninput="setPageField('tagline', this.value)" placeholder="Est. 2024">
-    </div>` : ''}
   `;
 }
 
@@ -420,7 +431,7 @@ function togglePageType(isCover) {
 function setPageField(key, val) {
   curPage()[key] = val;
   renderPreview();
-  saveState();
+  scheduleSave();   // 키 입력 → 디바운스
 }
 
 // ── 아이템 목록 ──────────────────────────────────────────────────
@@ -435,10 +446,9 @@ function renderItems() {
     return;
   }
   if (addBtn) addBtn.style.display = '';
-
   container.innerHTML = '';
-  const items = p.items;
-  items.forEach((item, i) => {
+
+  p.items.forEach((item, i) => {
     const div = document.createElement('div');
     div.className = 'item-card';
     div.innerHTML = `
@@ -482,7 +492,7 @@ function renderItems() {
     container.appendChild(div);
   });
 
-  if (items.length >= MAX_ITEMS) {
+  if (p.items.length >= MAX_ITEMS) {
     const notice = document.createElement('div');
     notice.className = 'page-limit-notice';
     notice.innerHTML = `이 페이지는 최대 ${MAX_ITEMS}개입니다.<br>새 페이지를 추가하려면 <strong>"+ 페이지"</strong>를 누르세요.`;
@@ -504,7 +514,7 @@ function setField(id, key, val) {
         if (lbl) lbl.textContent = val || '(이름없음)';
       }
       renderPreview();
-      saveState();
+      scheduleSave();   // 키 입력 → 디바운스
       return;
     }
   }
@@ -540,15 +550,14 @@ function delItem(id, e) {
 function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 
 // ── 프리뷰 렌더 ──────────────────────────────────────────────────
+// S.font는 onFontChange()에서만 변경 — 렌더 함수는 상태를 읽기만 함
 function renderPreview() {
-  const p = curPage();
-  S.font = document.getElementById('eFont').value;
-
+  const p   = curPage();
   const el  = document.getElementById('menuPreview');
   const cls = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' }[S.layout] || 'lc';
-  el.className         = cls;
-  el.style.background  = S.bg;
-  el.style.fontFamily  = S.font;
+  el.className        = cls;
+  el.style.background = S.bg;
+  el.style.fontFamily = S.font;
 
   if (p.type === 'cover') {
     el.innerHTML = tplCover(p);
@@ -572,20 +581,25 @@ function num(i) { return String(i+1).padStart(2,'0'); }
 
 // ── 커버 템플릿 ───────────────────────────────────────────────────
 function tplCover(p) {
-  const layoutCoverClass = {
-    coffee:'cover-coffee', modern:'cover-modern', elegant:'cover-elegant',
-    chalk:'cover-chalk', bistro:'cover-bistro', minimal:'cover-minimal'
-  }[S.layout] || 'cover-coffee';
+  const cls = COVER_CSS[S.layout] || 'cover-coffee';
   return `
-    <div class="cover-wrap ${layoutCoverClass}">
+    <div class="cover-wrap ${cls}">
       <div class="cover-inner">
-        ${p.tagline ? `<div class="cover-tag">${p.tagline}</div>` : ''}
-        <div class="cover-cat" style="font-size:${S.fs.cat}px">${p.category||''}</div>
-        <div class="cover-title" style="font-size:${S.fs.title}px">${p.title||''}</div>
+        ${p.tagline  ? `<div class="cover-tag">${esc(p.tagline)}</div>`  : ''}
+        <div class="cover-cat"   style="font-size:${S.fs.cat}px">${esc(p.category||'')}</div>
+        <div class="cover-title" style="font-size:${S.fs.title}px">${esc(p.title||'')}</div>
         <div class="cover-divider"><span class="cover-orn">─✦─</span></div>
-        <div class="cover-sub" style="font-size:${S.fs.sub}px">${p.subtitle||''}</div>
+        <div class="cover-sub"   style="font-size:${S.fs.sub}px">${esc(p.subtitle||'')}</div>
       </div>
     </div>`;
+}
+
+// ── 메뉴 아이템 행 공통 렌더 ─────────────────────────────────────
+function renderItemRow(it) {
+  return `
+    ${it.showName  !== false ? `<div class="m-name"  style="font-size:${S.fs.name}px">${esc(it.name)}</div>`  : ''}
+    ${it.showDesc  !== false ? `<div class="m-desc"  style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>`  : ''}
+    ${it.showPrice !== false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${esc(it.price)}</span>` : ''}`;
 }
 
 // ── 메뉴 템플릿들 ────────────────────────────────────────────────
@@ -596,14 +610,12 @@ function tplCoffee(p) {
       ${imgTag(it,'m-img','m-img-ph')}
       <div class="m-content">
         <div class="m-num" style="font-size:${S.fs.name*0.58}px">${num(i)}.</div>
-        ${it.showName!==false ? `<div class="m-name" style="font-size:${S.fs.name}px">${it.name}</div>` : ''}
-        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
-        ${it.showPrice!==false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${it.price}</span>` : ''}
+        ${renderItemRow(it)}
       </div>
     </div>`).join('');
-  return `<div class="m-cat" style="font-size:${S.fs.cat}px">${cat}</div>
-          <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-          ${sub ? `<div class="m-sub" style="font-size:${S.fs.sub}px">${sub}</div>` : ''}
+  return `<div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
+          <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
+          ${sub ? `<div class="m-sub" style="font-size:${S.fs.sub}px">${esc(sub)}</div>` : ''}
           <hr class="m-divider">${rows}`;
 }
 
@@ -615,15 +627,15 @@ function tplModern(p) {
       <div class="m-content">
         <div class="m-num" style="font-size:${Math.max(9,S.fs.desc-2)}px">${num(i)}</div>
         <div class="m-row">
-          ${it.showName!==false ? `<div class="m-name" style="font-size:${S.fs.name}px">${it.name}</div>` : '<div></div>'}
-          ${it.showPrice!==false ? `<div class="m-price" style="font-size:${S.fs.price}px">₩${it.price}</div>` : ''}
+          ${it.showName  !== false ? `<div class="m-name"  style="font-size:${S.fs.name}px">${esc(it.name)}</div>` : '<div></div>'}
+          ${it.showPrice !== false ? `<div class="m-price" style="font-size:${S.fs.price}px">₩${esc(it.price)}</div>` : ''}
         </div>
-        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
+        ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `<div class="m-cat" style="font-size:${S.fs.cat*0.4}px">${cat}</div>
-          <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-          <div class="m-sub" style="font-size:${S.fs.sub}px">${sub}</div>
+  return `<div class="m-cat"   style="font-size:${S.fs.cat*0.4}px">${esc(cat)}</div>
+          <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
+          <div class="m-sub"   style="font-size:${S.fs.sub}px">${esc(sub)}</div>
           <hr class="m-divider">
           <div class="m-grid">${rows}</div>`;
 }
@@ -636,39 +648,39 @@ function tplElegant(p) {
       <div class="m-content">
         <div class="m-row">
           <div class="m-left">
-            <span class="m-num" style="font-size:${Math.max(9,S.fs.desc-2)}px">${num(i)}</span>
-            ${it.showName!==false ? `<span class="m-name" style="font-size:${S.fs.name}px">${it.name}</span>` : ''}
+            <span class="m-num"  style="font-size:${Math.max(9,S.fs.desc-2)}px">${num(i)}</span>
+            ${it.showName !== false ? `<span class="m-name" style="font-size:${S.fs.name}px">${esc(it.name)}</span>` : ''}
           </div>
-          ${it.showPrice!==false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${it.price}</span>` : ''}
+          ${it.showPrice !== false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${esc(it.price)}</span>` : ''}
         </div>
-        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
+        ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `<div class="m-cat" style="font-size:${S.fs.cat*0.38}px">${cat}</div>
-          <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-          <div class="m-sub" style="font-size:${S.fs.sub}px">${sub}</div>
+  return `<div class="m-cat"   style="font-size:${S.fs.cat*0.38}px">${esc(cat)}</div>
+          <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
+          <div class="m-sub"   style="font-size:${S.fs.sub}px">${esc(sub)}</div>
           <div class="m-divider"><span class="m-div-orn">✦</span></div>
           ${rows}`;
 }
 
 function tplChalk(p) {
-  const { category: cat, title, subtitle: sub, items } = p;
+  const { category: cat, title, items } = p;
   const rows = items.map((it, i) => `
     <div class="m-item">
       ${imgTag(it,'m-img','m-img-ph')}
       <div class="m-content">
         <div class="m-row">
           <div class="m-left">
-            <span class="m-num" style="font-size:${Math.max(9,S.fs.desc-1)}px">${num(i)}.</span>
-            ${it.showName!==false ? `<span class="m-name" style="font-size:${S.fs.name}px">${it.name}</span>` : ''}
+            <span class="m-num"  style="font-size:${Math.max(9,S.fs.desc-1)}px">${num(i)}.</span>
+            ${it.showName !== false ? `<span class="m-name" style="font-size:${S.fs.name}px">${esc(it.name)}</span>` : ''}
           </div>
-          ${it.showPrice!==false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${it.price}</span>` : ''}
+          ${it.showPrice !== false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${esc(it.price)}</span>` : ''}
         </div>
-        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
+        ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `<div class="m-cat" style="font-size:${S.fs.cat}px">${cat}</div>
-          <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
+  return `<div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
+          <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           <hr class="m-divider">${rows}`;
 }
 
@@ -680,59 +692,62 @@ function tplBistro(p) {
       <div class="m-content">
         <div class="m-row">
           <div class="m-left">
-            <span class="m-num" style="font-size:${Math.max(9,S.fs.desc)}px">${num(i)}</span>
-            ${it.showName!==false ? `<span class="m-name" style="font-size:${S.fs.name}px">${it.name}</span>` : ''}
+            <span class="m-num"  style="font-size:${Math.max(9,S.fs.desc)}px">${num(i)}</span>
+            ${it.showName !== false ? `<span class="m-name" style="font-size:${S.fs.name}px">${esc(it.name)}</span>` : ''}
           </div>
-          ${it.showPrice!==false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${it.price}</span>` : ''}
+          ${it.showPrice !== false ? `<span class="m-price" style="font-size:${S.fs.price}px">₩${esc(it.price)}</span>` : ''}
         </div>
-        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
+        ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
   return `
     <div class="lb-header">
-      <div class="lb-badge">${cat}</div>
-      <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-      <div class="lb-rule"><span>${sub}</span></div>
+      <div class="lb-badge">${esc(cat)}</div>
+      <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
+      <div class="lb-rule"><span>${esc(sub)}</span></div>
     </div>
     <div class="lb-body">${rows}</div>`;
 }
 
 function tplMinimal(p) {
   const { category: cat, title, subtitle: sub, items } = p;
-  const rows = items.map((it, i) => `
+  const rows = items.map((it) => `
     <div class="m-item">
       ${imgTag(it,'m-img','m-img-ph','·')}
       <div class="m-content">
         <div class="m-top-row">
-          ${it.showName!==false ? `<div class="m-name" style="font-size:${S.fs.name}px">${it.name}</div>` : ''}
-          ${it.showPrice!==false ? `<div class="m-price" style="font-size:${S.fs.price}px">${it.price}</div>` : ''}
+          ${it.showName  !== false ? `<div class="m-name"  style="font-size:${S.fs.name}px">${esc(it.name)}</div>`  : ''}
+          ${it.showPrice !== false ? `<div class="m-price" style="font-size:${S.fs.price}px">${esc(it.price)}</div>` : ''}
         </div>
-        ${it.showDesc!==false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${it.desc}</div>` : ''}
+        ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
   return `
     <div class="lmin-header">
-      <div class="lmin-cat" style="font-size:${S.fs.cat*0.5}px">${cat}</div>
-      <div class="m-title" style="font-size:${S.fs.title}px">${title}</div>
-      ${sub ? `<div class="lmin-sub" style="font-size:${S.fs.sub}px">${sub}</div>` : ''}
+      <div class="lmin-cat"  style="font-size:${S.fs.cat*0.5}px">${esc(cat)}</div>
+      <div class="m-title"   style="font-size:${S.fs.title}px">${esc(title)}</div>
+      ${sub ? `<div class="lmin-sub" style="font-size:${S.fs.sub}px">${esc(sub)}</div>` : ''}
       <div class="lmin-line"></div>
     </div>
     <div class="lmin-body">${rows}</div>`;
 }
 
-// ── 스케일 ───────────────────────────────────────────────────────
+// ── 스케일 (requestAnimationFrame으로 강제 리플로우 방지) ────────
 function scalePreview() {
-  const panel   = document.querySelector('.preview-panel');
-  const scaler  = document.querySelector('.preview-scaler');
-  const preview = document.getElementById('menuPreview');
-  const pw = panel.clientWidth  - 48;
-  const ph = panel.clientHeight - 120;
-  const mw = preview.offsetWidth  || 794;
-  const mh = preview.offsetHeight || 1123;
-  const scale = Math.min(pw / mw, ph / mh, 1);
-  scaler.style.transform = `scale(${scale})`;
-  scaler.style.width  = mw + 'px';
-  scaler.style.height = mh + 'px';
+  requestAnimationFrame(() => {
+    const panel   = document.querySelector('.preview-panel');
+    const scaler  = document.querySelector('.preview-scaler');
+    const preview = document.getElementById('menuPreview');
+    // A4 비율 고정값 사용 — offsetWidth/Height 강제 리플로우 제거
+    const mw = 794, mh = 1123;
+    const pw = panel.clientWidth  - 48;
+    const ph = panel.clientHeight - 120;
+    const scale = Math.min(pw / mw, ph / mh, 1);
+    scaler.style.transform = `scale(${scale})`;
+    scaler.style.width  = mw + 'px';
+    scaler.style.height = mh + 'px';
+    preview.style.width = mw + 'px';
+  });
 }
 window.addEventListener('resize', scalePreview);
 
@@ -791,13 +806,10 @@ function savePixabayKey() {
   const status = document.getElementById('apiKeyStatus');
   if (!key) {
     localStorage.removeItem('pixabay_key');
-    status.textContent = 'API 키가 삭제되었습니다.';
-    status.style.color = '#888';
-    return;
+    status.textContent = 'API 키가 삭제되었습니다.'; status.style.color = '#888'; return;
   }
   localStorage.setItem('pixabay_key', key);
-  status.textContent = '✓ 저장 완료!';
-  status.style.color = '#16a34a';
+  status.textContent = '✓ 저장 완료!'; status.style.color = '#16a34a';
 }
 
 // ── 이미지 검색 ──────────────────────────────────────────────────
@@ -812,8 +824,7 @@ function makeImgEl(src, alt) {
   img.className   = 'img-opt';
   img.loading     = 'lazy';
   img.crossOrigin = 'anonymous';
-  img.src = src;
-  img.alt = alt;
+  img.src = src; img.alt = alt;
   img.onerror = () => { img.src = `https://placehold.co/320x320/e5e7eb/9ca3af?text=${encodeURIComponent(alt)}`; };
   img.onclick = () => selectImg(img);
   return img;
@@ -846,16 +857,12 @@ function searchLoremflickr(q, grid) {
   const base = Math.floor(Math.random() * 9000) + 1000;
   const enc  = encodeURIComponent(q.replace(/\s+/g, ','));
   grid.innerHTML = '';
-  for (let i = 0; i < 9; i++) {
-    grid.appendChild(makeImgEl(`https://loremflickr.com/320/320/${enc}?lock=${base + i}`, q));
-  }
+  for (let i = 0; i < 9; i++) grid.appendChild(makeImgEl(`https://loremflickr.com/320/320/${enc}?lock=${base + i}`, q));
 }
 
 async function searchPixabay(q, grid, key, isTranslated = false) {
   try {
-    const enc  = encodeURIComponent(q);
-    const lang = isTranslated ? 'en' : 'ko';
-    const res  = await fetch(`https://pixabay.com/api/?key=${key}&q=${enc}&per_page=9&image_type=photo&safesearch=true&lang=${lang}`);
+    const res  = await fetch(`https://pixabay.com/api/?key=${key}&q=${encodeURIComponent(q)}&per_page=9&image_type=photo&safesearch=true&lang=${isTranslated?'en':'ko'}`);
     if (!res.ok) throw new Error('API 오류');
     const data = await res.json();
     grid.innerHTML = '';
@@ -864,9 +871,7 @@ async function searchPixabay(q, grid, key, isTranslated = false) {
       return;
     }
     data.hits.forEach(hit => grid.appendChild(makeImgEl(hit.webformatURL, q)));
-  } catch {
-    searchLoremflickr(q, grid);
-  }
+  } catch { searchLoremflickr(q, grid); }
 }
 
 function previewUrl() {
@@ -907,10 +912,7 @@ async function confirmImage() {
   } else {
     item.img = pendingImg.url;
   }
-  renderItems();
-  renderPreview();
-  saveState();
-  closeModal();
+  renderItems(); renderPreview(); saveState(); closeModal();
 }
 
 async function toBase64(url) {
@@ -918,8 +920,7 @@ async function toBase64(url) {
   const blob = await res.blob();
   return new Promise((res, rej) => {
     const r = new FileReader();
-    r.onload  = () => res(r.result);
-    r.onerror = rej;
+    r.onload = () => res(r.result); r.onerror = rej;
     r.readAsDataURL(blob);
   });
 }
@@ -927,10 +928,9 @@ async function toBase64(url) {
 // ── PDF 내보내기 ─────────────────────────────────────────────────
 async function exportPDF() {
   const btn = document.querySelector('.pdf-btn');
-  btn.textContent = '⏳ 생성 중...';
-  btn.disabled = true;
+  btn.textContent = '⏳ 생성 중...'; btn.disabled = true;
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pdf  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pdfW = pdf.internal.pageSize.getWidth();
   const pdfH = pdf.internal.pageSize.getHeight();
   const savedPage = S.cur;
@@ -938,14 +938,10 @@ async function exportPDF() {
   const preview   = document.getElementById('menuPreview');
   try {
     for (let i = 0; i < S.pages.length; i++) {
-      S.cur = i;
-      renderPreview();
+      S.cur = i; renderPreview();
       scaler.style.transform = 'scale(1)';
       await new Promise(r => setTimeout(r, 150));
-      const canvas = await html2canvas(preview, {
-        scale: 2, useCORS: true, allowTaint: false,
-        backgroundColor: S.bg, logging: false,
-      });
+      const canvas = await html2canvas(preview, { scale: 2, useCORS: true, allowTaint: false, backgroundColor: S.bg, logging: false });
       if (i > 0) pdf.addPage();
       const ratio = Math.min(pdfW / canvas.width, pdfH / canvas.height);
       const x = (pdfW - canvas.width * ratio) / 2;
@@ -954,43 +950,16 @@ async function exportPDF() {
     }
     const titlePage = S.pages.find(p => p.title) || S.pages[0];
     pdf.save(`${titlePage.title || 'menu'}_menu.pdf`);
-  } catch (e) {
-    alert('PDF 생성 실패: ' + e.message);
-  }
-  S.cur = savedPage;
-  renderPreview();
-  scalePreview();
-  btn.textContent = 'PDF 출력';
-  btn.disabled = false;
+  } catch (e) { alert('PDF 생성 실패: ' + e.message); }
+  S.cur = savedPage; renderPreview(); scalePreview();
+  btn.textContent = 'PDF 출력'; btn.disabled = false;
 }
 
 // ── 초기화 ───────────────────────────────────────────────────────
 async function init() {
-  // Supabase 먼저 초기화 (실시간 구독 시작)
   initSupabase();
-
-  // 상태 불러오기 (Supabase 우선, 없으면 localStorage)
   await loadState();
-
-  // UI에 상태 반영
-  const fontEl = document.getElementById('eFont');
-  if (fontEl) fontEl.value = S.font;
-
-  const fsMap = { title:'fsTitle', cat:'fsCat', sub:'fsSub', name:'fsName', desc:'fsDesc', price:'fsPrice' };
-  const vsMap = { title:'vTitle',  cat:'vCat',  sub:'vSub',  name:'vName',  desc:'vDesc',  price:'vPrice'  };
-  for (const [key, elId] of Object.entries(fsMap)) {
-    const el = document.getElementById(elId);
-    if (el) el.value = S.fs[key];
-    const vEl = document.getElementById(vsMap[key]);
-    if (vEl) vEl.textContent = S.fs[key];
-  }
-
-  document.querySelectorAll('.layout-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.layout === S.layout);
-  });
-
-  initSwatches();
-  renderAll();
+  syncUIFromState();  // 상태 → UI 반영 (중복 코드 제거)
 }
 
 init();
