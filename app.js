@@ -937,33 +937,74 @@ async function toBase64(url) {
 }
 
 // ── PDF 내보내기 ─────────────────────────────────────────────────
+// 핵심 수정: scalePreview()의 requestAnimationFrame이 scale(1) 리셋을 덮어쓰는 버그 방지
+// → 화면 밖 별도 컨테이너에서 794px 실제 크기로 렌더링 후 캡처 (scaler 완전 분리)
 async function exportPDF() {
   const btn = document.querySelector('.pdf-btn');
   btn.textContent = '⏳ 생성 중...'; btn.disabled = true;
+
   const { jsPDF } = window.jspdf;
   const pdf  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pdfW = pdf.internal.pageSize.getWidth();
   const pdfH = pdf.internal.pageSize.getHeight();
   const savedPage = S.cur;
-  const scaler    = document.querySelector('.preview-scaler');
-  const preview   = document.getElementById('menuPreview');
+
+  // 화면 밖 임시 컨테이너 — scaler transform 간섭 없이 794px 실제 크기로 렌더링
+  const offscreen = document.createElement('div');
+  offscreen.style.cssText = 'position:fixed;left:-1600px;top:0;z-index:-9999;pointer-events:none;';
+  const tempEl = document.createElement('div');
+  offscreen.appendChild(tempEl);
+  document.body.appendChild(offscreen);
+
+  const clsMap = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' };
+  const tplMap = { coffee:tplCoffee, modern:tplModern, elegant:tplElegant, chalk:tplChalk, bistro:tplBistro, minimal:tplMinimal };
+
   try {
     for (let i = 0; i < S.pages.length; i++) {
-      S.cur = i; renderPreview();
-      scaler.style.transform = 'scale(1)';
-      await new Promise(r => setTimeout(r, 150));
-      const canvas = await html2canvas(preview, { scale: 2, useCORS: true, allowTaint: false, backgroundColor: S.bg, logging: false });
+      S.cur = i;
+      const p = curPage();
+
+      // 인라인 스타일 초기화 후 재설정
+      tempEl.removeAttribute('style');
+      tempEl.style.width      = '794px';
+      tempEl.style.fontFamily = S.font;
+      tempEl.style.background = S.bg;
+
+      if (p.type === 'cover') {
+        tempEl.className = 'cover-page';
+        tempEl.innerHTML = tplCover(p);
+      } else {
+        tempEl.className = clsMap[S.layout] || 'lc';
+        tempEl.innerHTML = (tplMap[S.layout] || tplCoffee)(p);
+      }
+
+      // 폰트·이미지 로딩 대기
+      await document.fonts.ready;
+      await new Promise(r => setTimeout(r, 200));
+
+      const canvas = await html2canvas(tempEl, {
+        scale: 2, useCORS: true, allowTaint: false,
+        backgroundColor: S.bg, logging: false,
+        windowWidth: 794
+      });
+
       if (i > 0) pdf.addPage();
       const ratio = Math.min(pdfW / canvas.width, pdfH / canvas.height);
-      const x = (pdfW - canvas.width * ratio) / 2;
+      const x = (pdfW - canvas.width  * ratio) / 2;
       const y = (pdfH - canvas.height * ratio) / 2;
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, y, canvas.width * ratio, canvas.height * ratio);
     }
+
     const titlePage = S.pages.find(p => p.title) || S.pages[0];
     pdf.save(`${titlePage.title || 'menu'}_menu.pdf`);
-  } catch (e) { alert('PDF 생성 실패: ' + e.message); }
-  S.cur = savedPage; renderPreview(); scalePreview();
-  btn.textContent = 'PDF 출력'; btn.disabled = false;
+  } catch (e) {
+    alert('PDF 생성 실패: ' + e.message);
+  } finally {
+    document.body.removeChild(offscreen);
+    S.cur = savedPage;
+    renderPreview();
+    btn.textContent = 'PDF 출력'; btn.disabled = false;
+  }
 }
 
 // ── 초기화 ───────────────────────────────────────────────────────
