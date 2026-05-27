@@ -552,16 +552,18 @@ function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 // ── 프리뷰 렌더 ──────────────────────────────────────────────────
 // S.font는 onFontChange()에서만 변경 — 렌더 함수는 상태를 읽기만 함
 function renderPreview() {
-  const p   = curPage();
-  const el  = document.getElementById('menuPreview');
-  const cls = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' }[S.layout] || 'lc';
-  el.className        = cls;
+  const p  = curPage();
+  const el = document.getElementById('menuPreview');
   el.style.background = S.bg;
   el.style.fontFamily = S.font;
 
   if (p.type === 'cover') {
+    // 커버는 레이아웃 클래스의 padding을 받지 않도록 별도 클래스 사용
+    el.className = 'cover-page';
     el.innerHTML = tplCover(p);
   } else {
+    const cls = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' }[S.layout] || 'lc';
+    el.className = cls;
     if (S.layout === 'coffee')  el.innerHTML = tplCoffee(p);
     if (S.layout === 'modern')  el.innerHTML = tplModern(p);
     if (S.layout === 'elegant') el.innerHTML = tplElegant(p);
