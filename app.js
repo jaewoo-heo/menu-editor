@@ -32,11 +32,23 @@ async function saveToCloud() {
   const btn = document.getElementById('cloudSaveBtn');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
+    // 데이터 크기 사전 체크 (Supabase 권장 1MB 이하)
+    const payload = JSON.stringify(S);
+    const sizeKB  = Math.round(payload.length / 1024);
+    if (sizeKB > 900) {
+      const go = confirm(
+        `데이터 크기가 ${sizeKB}KB로 큽니다 (이미지 포함).\n` +
+        `서버 저장 시 타임아웃이 발생할 수 있습니다.\n\n` +
+        `이미지를 URL 방식으로 교체하면 크기를 줄일 수 있습니다.\n\n` +
+        `그래도 저장하시겠습니까?`
+      );
+      if (!go) { if (btn) { btn.textContent = '☁️ 서버 저장'; btn.disabled = false; } return; }
+    }
     const now = new Date().toISOString();
     const { error } = await db.from('menu_state')
       .upsert({ id: SHARED_ROW_ID, data: S, updated_at: now });
     if (error) throw error;
-    showToast('☁️ 서버에 저장됨', 2000);
+    showToast(`☁️ 서버에 저장됨 (${sizeKB}KB)`, 2000);
   } catch (e) {
     showToast('❌ 서버 저장 실패: ' + (e?.message || e), 3000);
     setSyncStatus('🔴 서버 오류', 'error');
@@ -891,13 +903,39 @@ function previewUrl() {
 function handleUpload(input) {
   const file = input.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    pendingImg = { type: 'b64', url: e.target.result };
+
+  const MAX_DIM = 600;   // 최대 600px (가로/세로)
+  const QUALITY = 0.75;  // JPEG 75% 품질
+
+  const objectUrl = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(objectUrl);
+
+    // 비율 유지하며 리사이즈
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (w > MAX_DIM || h > MAX_DIM) {
+      const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
+      w = Math.round(w * ratio);
+      h = Math.round(h * ratio);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const compressed = canvas.toDataURL('image/jpeg', QUALITY);
+
+    // 원본 대비 압축률 표시
+    const origKB  = Math.round(file.size / 1024);
+    const compKB  = Math.round(compressed.length * 0.75 / 1024);
+    console.log(`이미지 압축: ${origKB}KB → ${compKB}KB (${w}×${h})`);
+
+    pendingImg = { type: 'b64', url: compressed };
     document.querySelector('.upload-area').innerHTML =
-      `<img src="${e.target.result}" style="max-height:150px;border-radius:8px;object-fit:cover">`;
+      `<img src="${compressed}" style="max-height:150px;border-radius:8px;object-fit:cover">
+       <div style="font-size:11px;color:#aaa;margin-top:6px">${w}×${h}px · 약 ${compKB}KB</div>`;
   };
-  reader.readAsDataURL(file);
+  img.src = objectUrl;
 }
 
 async function confirmImage() {
