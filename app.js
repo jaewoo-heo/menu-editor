@@ -89,12 +89,17 @@ function applyState(data) {
   if (!data || typeof data !== 'object') return;
   if (data.pages) {
     data.pages.forEach((p, i) => {
-      if (!p.type)     p.type     = (i === 0) ? 'cover' : 'menu';
-      if (!p.category) p.category = '';
-      if (!p.title)    p.title    = '';
-      if (!p.subtitle) p.subtitle = '';
-      if (!p.tagline)  p.tagline  = '';
-      if (!p.items)    p.items    = [];
+      if (!p.type)               p.type      = (i === 0) ? 'cover' : 'menu';
+      if (!p.category)           p.category  = '';
+      if (!p.title)              p.title     = '';
+      if (!p.subtitle)           p.subtitle  = '';
+      if (!p.tagline)            p.tagline   = '';
+      if (!p.items)              p.items     = [];
+      if (!('headerImg' in p))   p.headerImg = null;   // 헤더 이미지 마이그레이션
+      // 아이템 imgPos 마이그레이션
+      p.items.forEach(item => {
+        if (!('imgPos' in item)) item.imgPos = 'center';
+      });
     });
   }
   if (data.cur !== undefined && data.pages && data.cur >= data.pages.length) {
@@ -222,17 +227,17 @@ const DEFAULT_STATE = {
   cur: 0,
   pages: [
     {
-      id: 1, type: 'cover',
+      id: 1, type: 'cover', headerImg: null,
       category: 'special', title: 'COFFEE',
       subtitle: 'Our signature drinks', tagline: 'Est. 2024', items: []
     },
     {
-      id: 2, type: 'menu',
+      id: 2, type: 'menu', headerImg: null,
       category: 'MENU', title: 'COFFEE',
       subtitle: 'Our signature drinks', tagline: '', items: [
-        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, showName: true, showDesc: true, showPrice: true },
-        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, showName: true, showDesc: true, showPrice: true },
-        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, showName: true, showDesc: true, showPrice: true },
+        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true },
+        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true },
+        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true },
       ]
     }
   ]
@@ -435,6 +440,18 @@ function renderEditorHeader() {
       <label>부제목</label>
       <input value="${esc(p.subtitle)}" oninput="setPageField('subtitle', this.value)">
     </div>
+    <div class="form-group">
+      <label>헤더 이미지 <span style="font-size:10px;color:#aaa">(로고·배너 등)</span></label>
+      <div class="img-row">
+        ${p.headerImg
+          ? `<img class="img-thumb" src="${p.headerImg}" style="object-fit:contain;background:#f0f0f0">`
+          : `<div class="img-placeholder">🖼</div>`}
+        <div style="display:flex;flex-direction:column;gap:5px;flex:1">
+          <button class="find-img-btn" onclick="openHeaderImgModal()">🔍 이미지 선택</button>
+          ${p.headerImg ? `<button class="find-img-btn" style="background:#ef4444" onclick="removeHeaderImg()">✕ 이미지 제거</button>` : ''}
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -483,10 +500,24 @@ function renderItems() {
           <input value="${esc(item.price)}" oninput="setField(${item.id},'price',this.value)"></div>
         <div class="img-row">
           ${item.img
-            ? `<img class="img-thumb" src="${item.img}" id="thumb-${item.id}">`
+            ? `<img class="img-thumb" src="${item.img}" id="thumb-${item.id}" style="object-position:${item.imgPos||'center'}">`
             : `<div class="img-placeholder" id="thumb-${item.id}">☕</div>`}
           <button class="find-img-btn" onclick="openModal(${item.id})">🔍 이미지 찾기</button>
         </div>
+        ${item.img ? `
+        <div class="img-pos-section">
+          <div class="img-pos-label">사진 위치 (짤리는 부분 조정)</div>
+          <div class="img-pos-grid">
+            ${[['top left','↖'],['top center','↑'],['top right','↗'],
+               ['center left','←'],['center','●'],['center right','→'],
+               ['bottom left','↙'],['bottom center','↓'],['bottom right','↘']]
+              .map(([pos,icon]) =>
+                `<button class="img-pos-btn${(item.imgPos||'center')===pos?' active':''}"
+                         onclick="setField(${item.id},'imgPos','${pos}')"
+                         title="${pos}">${icon}</button>`
+              ).join('')}
+          </div>
+        </div>` : ''}
         <div class="vis-toggles">
           <label class="vis-toggle">
             <span class="label">제목</span>
@@ -545,7 +576,7 @@ function addItem() {
     return;
   }
   const id = Date.now();
-  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, showName: true, showDesc: true, showPrice: true });
+  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true });
   renderItems();
   renderPreview();
   saveState();
@@ -592,7 +623,7 @@ function renderPreview() {
 
 function imgTag(item, imgCls, phCls, phIcon = '☕') {
   return item.img
-    ? `<img class="${imgCls}" src="${item.img}" alt="">`
+    ? `<img class="${imgCls}" src="${item.img}" alt="" style="object-position:${item.imgPos||'center'}">`
     : `<div class="${phCls}">${phIcon}</div>`;
 }
 function num(i) { return String(i+1).padStart(2,'0'); }
@@ -603,6 +634,7 @@ function tplCover(p) {
   return `
     <div class="cover-wrap ${cls}">
       <div class="cover-inner">
+        ${p.headerImg ? `<img class="cover-logo" src="${p.headerImg}" alt="">` : ''}
         ${p.tagline  ? `<div class="cover-tag">${esc(p.tagline)}</div>`  : ''}
         <div class="cover-cat"   style="font-size:${S.fs.cat}px">${esc(p.category||'')}</div>
         <div class="cover-title" style="font-size:${S.fs.title}px">${esc(p.title||'')}</div>
@@ -631,7 +663,8 @@ function tplCoffee(p) {
         ${renderItemRow(it)}
       </div>
     </div>`).join('');
-  return `<div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+          <div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           ${sub ? `<div class="m-sub" style="font-size:${S.fs.sub}px">${esc(sub)}</div>` : ''}
           <hr class="m-divider">${rows}`;
@@ -651,7 +684,8 @@ function tplModern(p) {
         ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `<div class="m-cat"   style="font-size:${S.fs.cat*0.4}px">${esc(cat)}</div>
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+          <div class="m-cat"   style="font-size:${S.fs.cat*0.4}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           <div class="m-sub"   style="font-size:${S.fs.sub}px">${esc(sub)}</div>
           <hr class="m-divider">
@@ -674,7 +708,8 @@ function tplElegant(p) {
         ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `<div class="m-cat"   style="font-size:${S.fs.cat*0.38}px">${esc(cat)}</div>
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+          <div class="m-cat"   style="font-size:${S.fs.cat*0.38}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           <div class="m-sub"   style="font-size:${S.fs.sub}px">${esc(sub)}</div>
           <div class="m-divider"><span class="m-div-orn">✦</span></div>
@@ -697,7 +732,8 @@ function tplChalk(p) {
         ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `<div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+          <div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           <hr class="m-divider">${rows}`;
 }
@@ -719,6 +755,7 @@ function tplBistro(p) {
       </div>
     </div>`).join('');
   return `
+    ${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
     <div class="lb-header">
       <div class="lb-badge">${esc(cat)}</div>
       <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
@@ -741,6 +778,7 @@ function tplMinimal(p) {
       </div>
     </div>`).join('');
   return `
+    ${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
     <div class="lmin-header">
       <div class="lmin-cat"  style="font-size:${S.fs.cat*0.5}px">${esc(cat)}</div>
       <div class="m-title"   style="font-size:${S.fs.title}px">${esc(title)}</div>
@@ -790,6 +828,31 @@ function openModal(id) {
   switchTab('search', document.querySelector('.mtab'));
   document.getElementById('imgModal').style.display = 'flex';
   if (itemName) doSearch();
+}
+
+function openHeaderImgModal() {
+  editItemId = '__header__';
+  pendingImg  = null;
+  document.getElementById('searchQ').value = '';
+  document.getElementById('imgGrid').innerHTML = '';
+  document.getElementById('translateNotice').style.display = 'none';
+  document.getElementById('urlInput').value = '';
+  document.getElementById('urlPreviewImg').style.display = 'none';
+  document.querySelector('.upload-area').innerHTML =
+    `<div style="font-size:36px;margin-bottom:8px">📁</div>
+     <div>클릭하거나 파일을 드래그하여 업로드</div>
+     <div style="font-size:11px;color:#aaa;margin-top:4px">JPG, PNG, WEBP 지원</div>`;
+  // 업로드 탭으로 기본 열기 (로고는 보통 파일 업로드)
+  const tabs = document.querySelectorAll('.mtab');
+  switchTab('upload', tabs[2]);
+  document.getElementById('imgModal').style.display = 'flex';
+}
+
+function removeHeaderImg() {
+  curPage().headerImg = null;
+  renderEditorHeader();
+  renderPreview();
+  saveState();
 }
 
 function closeModal() { document.getElementById('imgModal').style.display = 'none'; }
@@ -944,6 +1007,24 @@ async function confirmImage() {
     if (url) pendingImg = { type: 'url', url };
     else { alert('이미지를 선택해주세요.'); return; }
   }
+
+  // ── 헤더 이미지 처리 ───────────────────────────────────────────
+  if (editItemId === '__header__') {
+    const p = curPage();
+    if (pendingImg.type === 'url' && !pendingImg.url.startsWith('data:')) {
+      try { p.headerImg = await toBase64(pendingImg.url); }
+      catch { p.headerImg = pendingImg.url; }
+    } else {
+      p.headerImg = pendingImg.url;
+    }
+    renderEditorHeader();
+    renderPreview();
+    saveState();
+    closeModal();
+    return;
+  }
+
+  // ── 메뉴 아이템 이미지 처리 (기존) ────────────────────────────
   let item = null;
   for (const p of S.pages) {
     item = p.items.find(i => i.id === editItemId);

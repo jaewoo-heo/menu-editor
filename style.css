@@ -282,6 +282,22 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 /* 제목 텍스트 오버플로우 방지 — PDF 출력 시 레이아웃 경계 밖으로 삐져나오는 것 방지 */
 .m-title,.cover-title{word-break:break-word;overflow-wrap:break-word;max-width:100%}
 
+/* ── 헤더 이미지 (로고/배너) ── */
+/* 커버 페이지 내부 로고 (가운데 정렬, 최대 100px) */
+.cover-logo{max-height:100px;max-width:220px;object-fit:contain;border-radius:6px}
+/* 메뉴 페이지 우상단 고정 로고 */
+.page-logo{position:absolute;top:20px;right:24px;max-height:64px;max-width:140px;object-fit:contain;opacity:.9;border-radius:4px}
+/* lm·lk·lmin은 position:relative 없음 → 추가 */
+.lm,.lk,.lmin{position:relative}
+
+/* ── 이미지 위치 선택기 (object-position 3×3 그리드) ── */
+.img-pos-section{margin-top:8px}
+.img-pos-label{font-size:11px;color:#666;margin-bottom:4px}
+.img-pos-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;width:78px}
+.img-pos-btn{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;padding:5px 0;font-size:12px;cursor:pointer;transition:all .15s;line-height:1;text-align:center}
+.img-pos-btn:hover{background:#e5e7eb}
+.img-pos-btn.active{background:#e2a96f;border-color:#d4924f;color:#fff}
+
 /* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:flex;align-items:center;justify-content:center}
 .modal{background:#fff;border-radius:14px;padding:24px;width:580px;max-height:82vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
