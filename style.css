@@ -77,7 +77,9 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .page-tab:hover{background:#dee2e6}
 .page-tab.active{background:#e2a96f;border-color:#e2a96f;color:#fff;font-weight:600}
 .page-tab-del{font-size:10px;opacity:.6;line-height:1}
-.page-tab-del:hover{opacity:1}
+.page-tab-del:hover{opacity:1;color:#ef4444}
+.page-tab-dup{font-size:11px;opacity:.5;line-height:1;cursor:pointer}
+.page-tab-dup:hover{opacity:1;color:#6366f1}
 
 /* ITEM CARD */
 .item-card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;margin:0 12px 10px;overflow:hidden}
@@ -283,20 +285,22 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .m-title,.cover-title{word-break:break-word;overflow-wrap:break-word;max-width:100%}
 
 /* ── 헤더 이미지 (로고/배너) ── */
-/* 커버 페이지 내부 로고 (가운데 정렬, 최대 100px) */
-.cover-logo{max-height:100px;max-width:220px;object-fit:contain;border-radius:6px}
-/* 메뉴 페이지 우상단 고정 로고 */
+/* 커버 페이지 내부 로고 (가운데 정렬, 크기는 인라인 style로 제어) */
+.cover-logo{max-height:100px;max-width:220px;object-fit:contain;border-radius:4px}
+/* 메뉴 페이지 우상단 고정 로고 (크기는 인라인 style로 제어) */
 .page-logo{position:absolute;top:20px;right:24px;max-height:64px;max-width:140px;object-fit:contain;opacity:.9;border-radius:4px}
 /* lm·lk·lmin은 position:relative 없음 → 추가 */
 .lm,.lk,.lmin{position:relative}
 
-/* ── 이미지 위치 선택기 (object-position 3×3 그리드) ── */
-.img-pos-section{margin-top:8px}
-.img-pos-label{font-size:11px;color:#666;margin-bottom:4px}
+/* ── 이미지 위치·줌 선택기 ── */
+.img-pos-section{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.img-pos-label{font-size:11px;color:#666}
 .img-pos-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;width:78px}
 .img-pos-btn{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;padding:5px 0;font-size:12px;cursor:pointer;transition:all .15s;line-height:1;text-align:center}
 .img-pos-btn:hover{background:#e5e7eb}
 .img-pos-btn.active{background:#e2a96f;border-color:#d4924f;color:#fff}
+/* 확대/축소 슬라이더 행 */
+.img-zoom-row{display:flex;align-items:center;gap:8px;margin-top:2px}
 
 /* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:flex;align-items:center;justify-content:center}

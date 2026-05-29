@@ -95,10 +95,12 @@ function applyState(data) {
       if (!p.subtitle)           p.subtitle  = '';
       if (!p.tagline)            p.tagline   = '';
       if (!p.items)              p.items     = [];
-      if (!('headerImg' in p))   p.headerImg = null;   // 헤더 이미지 마이그레이션
-      // 아이템 imgPos 마이그레이션
+      if (!('headerImg'     in p)) p.headerImg     = null;
+      if (!('headerImgSize' in p)) p.headerImgSize = 100;
+      // 아이템 필드 마이그레이션
       p.items.forEach(item => {
-        if (!('imgPos' in item)) item.imgPos = 'center';
+        if (!('imgPos'   in item)) item.imgPos   = 'center';
+        if (!('imgScale' in item)) item.imgScale = 100;
       });
     });
   }
@@ -227,17 +229,17 @@ const DEFAULT_STATE = {
   cur: 0,
   pages: [
     {
-      id: 1, type: 'cover', headerImg: null,
+      id: 1, type: 'cover', headerImg: null, headerImgSize: 100,
       category: 'special', title: 'COFFEE',
       subtitle: 'Our signature drinks', tagline: 'Est. 2024', items: []
     },
     {
-      id: 2, type: 'menu', headerImg: null,
+      id: 2, type: 'menu', headerImg: null, headerImgSize: 100,
       category: 'MENU', title: 'COFFEE',
       subtitle: 'Our signature drinks', tagline: '', items: [
-        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true },
-        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true },
-        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true },
+        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, imgPos: 'center', imgScale: 100, showName: true, showDesc: true, showPrice: true },
+        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, imgPos: 'center', imgScale: 100, showName: true, showDesc: true, showPrice: true },
+        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, imgPos: 'center', imgScale: 100, showName: true, showDesc: true, showPrice: true },
       ]
     }
   ]
@@ -384,6 +386,16 @@ function renderPageTabs() {
     tab.className = 'page-tab' + (i === S.cur ? ' active' : '');
     tab.onclick = () => setPage(i);
     tab.innerHTML = p.type === 'cover' ? '📖 표지' : `페이지 ${i}`;
+
+    // 복사 버튼
+    const dup = document.createElement('span');
+    dup.className   = 'page-tab-dup';
+    dup.textContent = ' ⧉';
+    dup.title       = '페이지 복사';
+    dup.onclick = (e) => duplicatePage(i, e);
+    tab.appendChild(dup);
+
+    // 삭제 버튼
     if (S.pages.length > 1) {
       const del = document.createElement('span');
       del.className   = 'page-tab-del';
@@ -393,6 +405,19 @@ function renderPageTabs() {
     }
     el.appendChild(tab);
   });
+}
+
+function duplicatePage(idx, e) {
+  e.stopPropagation();
+  const src  = S.pages[idx];
+  // 깊은 복사 후 id만 새로 부여
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = Date.now();
+  copy.items = copy.items.map(it => ({ ...it, id: Date.now() + Math.random() }));
+  S.pages.splice(idx + 1, 0, copy);
+  S.cur = idx + 1;
+  renderAll();
+  saveState();
 }
 
 function renderPageNav() {
@@ -444,13 +469,21 @@ function renderEditorHeader() {
       <label>헤더 이미지 <span style="font-size:10px;color:#aaa">(로고·배너 등)</span></label>
       <div class="img-row">
         ${p.headerImg
-          ? `<img class="img-thumb" src="${p.headerImg}" style="object-fit:contain;background:#f0f0f0">`
+          ? `<img class="img-thumb" src="${p.headerImg}" style="object-fit:contain;background:repeating-conic-gradient(#ddd 0% 25%,#f8f8f8 0% 50%) 0 0/12px 12px">`
           : `<div class="img-placeholder">🖼</div>`}
         <div style="display:flex;flex-direction:column;gap:5px;flex:1">
           <button class="find-img-btn" onclick="openHeaderImgModal()">🔍 이미지 선택</button>
           ${p.headerImg ? `<button class="find-img-btn" style="background:#ef4444" onclick="removeHeaderImg()">✕ 이미지 제거</button>` : ''}
         </div>
       </div>
+      ${p.headerImg ? `
+      <div style="margin-top:8px">
+        <label style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:3px">
+          이미지 크기 <span id="hImgSizeLbl" class="size-val">${p.headerImgSize||100}px</span>
+        </label>
+        <input type="range" min="30" max="200" value="${p.headerImgSize||100}" style="width:100%;accent-color:#e2a96f;cursor:pointer"
+               oninput="setPageField('headerImgSize',+this.value);document.getElementById('hImgSizeLbl').textContent=this.value+'px'">
+      </div>` : ''}
     </div>
   `;
 }
@@ -517,6 +550,11 @@ function renderItems() {
                          title="${pos}">${icon}</button>`
               ).join('')}
           </div>
+          <div class="img-zoom-row">
+            <span class="img-pos-label" style="white-space:nowrap">확대 <span id="zoom-lbl-${item.id}" class="size-val">${item.imgScale||100}%</span></span>
+            <input type="range" min="100" max="200" value="${item.imgScale||100}" style="flex:1;accent-color:#e2a96f;cursor:pointer"
+                   oninput="setField(${item.id},'imgScale',+this.value);document.getElementById('zoom-lbl-${item.id}').textContent=this.value+'%'">
+          </div>
         </div>` : ''}
         <div class="vis-toggles">
           <label class="vis-toggle">
@@ -576,7 +614,7 @@ function addItem() {
     return;
   }
   const id = Date.now();
-  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, imgPos: 'center', showName: true, showDesc: true, showPrice: true });
+  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, imgPos: 'center', imgScale: 100, showName: true, showDesc: true, showPrice: true });
   renderItems();
   renderPreview();
   saveState();
@@ -621,10 +659,16 @@ function renderPreview() {
   scalePreview();
 }
 
+// imgTag: CSS 클래스를 wrapper div에 적용 → overflow:hidden 으로 확대 시 클립
+// transform:scale 을 img 에 적용 → object-fit:cover + object-position 과 결합
 function imgTag(item, imgCls, phCls, phIcon = '☕') {
-  return item.img
-    ? `<img class="${imgCls}" src="${item.img}" alt="" style="object-position:${item.imgPos||'center'}">`
-    : `<div class="${phCls}">${phIcon}</div>`;
+  if (!item.img) return `<div class="${phCls}">${phIcon}</div>`;
+  const scale = item.imgScale && item.imgScale !== 100 ? item.imgScale / 100 : 1;
+  const pos   = item.imgPos || 'center';
+  const t     = scale !== 1 ? `transform:scale(${scale});transform-origin:${pos};` : '';
+  return `<div class="${imgCls}" style="overflow:hidden">` +
+    `<img src="${item.img}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:${pos};display:block;${t}">` +
+    `</div>`;
 }
 function num(i) { return String(i+1).padStart(2,'0'); }
 
@@ -634,7 +678,7 @@ function tplCover(p) {
   return `
     <div class="cover-wrap ${cls}">
       <div class="cover-inner">
-        ${p.headerImg ? `<img class="cover-logo" src="${p.headerImg}" alt="">` : ''}
+        ${p.headerImg ? `<img class="cover-logo" src="${p.headerImg}" alt="" style="max-height:${p.headerImgSize||100}px;max-width:${(p.headerImgSize||100)*2.5}px">` : ''}
         ${p.tagline  ? `<div class="cover-tag">${esc(p.tagline)}</div>`  : ''}
         <div class="cover-cat"   style="font-size:${S.fs.cat}px">${esc(p.category||'')}</div>
         <div class="cover-title" style="font-size:${S.fs.title}px">${esc(p.title||'')}</div>
@@ -663,7 +707,7 @@ function tplCoffee(p) {
         ${renderItemRow(it)}
       </div>
     </div>`).join('');
-  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="" style="max-height:${Math.min(p.headerImgSize||100,80)}px;max-width:${Math.min((p.headerImgSize||100)*2,160)}px">` : ''}
           <div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           ${sub ? `<div class="m-sub" style="font-size:${S.fs.sub}px">${esc(sub)}</div>` : ''}
@@ -684,7 +728,7 @@ function tplModern(p) {
         ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="" style="max-height:${Math.min(p.headerImgSize||100,80)}px;max-width:${Math.min((p.headerImgSize||100)*2,160)}px">` : ''}
           <div class="m-cat"   style="font-size:${S.fs.cat*0.4}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           <div class="m-sub"   style="font-size:${S.fs.sub}px">${esc(sub)}</div>
@@ -708,7 +752,7 @@ function tplElegant(p) {
         ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="" style="max-height:${Math.min(p.headerImgSize||100,80)}px;max-width:${Math.min((p.headerImgSize||100)*2,160)}px">` : ''}
           <div class="m-cat"   style="font-size:${S.fs.cat*0.38}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           <div class="m-sub"   style="font-size:${S.fs.sub}px">${esc(sub)}</div>
@@ -732,7 +776,7 @@ function tplChalk(p) {
         ${it.showDesc !== false ? `<div class="m-desc" style="font-size:${S.fs.desc}px">${esc(it.desc)}</div>` : ''}
       </div>
     </div>`).join('');
-  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+  return `${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="" style="max-height:${Math.min(p.headerImgSize||100,80)}px;max-width:${Math.min((p.headerImgSize||100)*2,160)}px">` : ''}
           <div class="m-cat"   style="font-size:${S.fs.cat}px">${esc(cat)}</div>
           <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
           <hr class="m-divider">${rows}`;
@@ -755,7 +799,7 @@ function tplBistro(p) {
       </div>
     </div>`).join('');
   return `
-    ${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+    ${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="" style="max-height:${Math.min(p.headerImgSize||100,80)}px;max-width:${Math.min((p.headerImgSize||100)*2,160)}px">` : ''}
     <div class="lb-header">
       <div class="lb-badge">${esc(cat)}</div>
       <div class="m-title" style="font-size:${S.fs.title}px">${esc(title)}</div>
@@ -778,7 +822,7 @@ function tplMinimal(p) {
       </div>
     </div>`).join('');
   return `
-    ${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="">` : ''}
+    ${p.headerImg ? `<img class="page-logo" src="${p.headerImg}" alt="" style="max-height:${Math.min(p.headerImgSize||100,80)}px;max-width:${Math.min((p.headerImgSize||100)*2,160)}px">` : ''}
     <div class="lmin-header">
       <div class="lmin-cat"  style="font-size:${S.fs.cat*0.5}px">${esc(cat)}</div>
       <div class="m-title"   style="font-size:${S.fs.title}px">${esc(title)}</div>
@@ -969,6 +1013,8 @@ function handleUpload(input) {
 
   const MAX_DIM = 600;   // 최대 600px (가로/세로)
   const QUALITY = 0.75;  // JPEG 75% 품질
+  // PNG는 투명도(알파채널) 보존 — JPEG 변환 시 검정 배경 생기는 문제 방지
+  const isPng = file.type === 'image/png';
 
   const objectUrl = URL.createObjectURL(file);
   const img = new Image();
@@ -985,18 +1031,31 @@ function handleUpload(input) {
 
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-    const compressed = canvas.toDataURL('image/jpeg', QUALITY);
+    const ctx = canvas.getContext('2d');
+    if (!isPng) {
+      // JPEG: 투명 영역을 흰색으로 채워 검정 배경 방지
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.drawImage(img, 0, 0, w, h);
 
-    // 원본 대비 압축률 표시
-    const origKB  = Math.round(file.size / 1024);
-    const compKB  = Math.round(compressed.length * 0.75 / 1024);
-    console.log(`이미지 압축: ${origKB}KB → ${compKB}KB (${w}×${h})`);
+    // PNG: 투명도 유지 / 기타: JPEG 압축
+    const compressed = isPng
+      ? canvas.toDataURL('image/png')
+      : canvas.toDataURL('image/jpeg', QUALITY);
+
+    const origKB = Math.round(file.size / 1024);
+    const compKB = Math.round(compressed.length * 0.75 / 1024);
+    console.log(`이미지 압축: ${origKB}KB → ${compKB}KB (${w}×${h}, ${isPng?'PNG':'JPEG'})`);
 
     pendingImg = { type: 'b64', url: compressed };
+    // PNG 미리보기: 투명 체크무늬 배경으로 투명도 시각화
+    const previewBg = isPng
+      ? 'background:repeating-conic-gradient(#ccc 0% 25%,#fff 0% 50%) 0 0/14px 14px'
+      : '';
     document.querySelector('.upload-area').innerHTML =
-      `<img src="${compressed}" style="max-height:150px;border-radius:8px;object-fit:cover">
-       <div style="font-size:11px;color:#aaa;margin-top:6px">${w}×${h}px · 약 ${compKB}KB</div>`;
+      `<img src="${compressed}" style="max-height:150px;border-radius:8px;object-fit:contain;${previewBg}">
+       <div style="font-size:11px;color:#aaa;margin-top:6px">${w}×${h}px · 약 ${compKB}KB${isPng ? ' · PNG (투명도 유지)' : ''}</div>`;
   };
   img.src = objectUrl;
 }
