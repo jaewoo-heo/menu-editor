@@ -1199,17 +1199,31 @@ async function exportPDF() {
       await document.fonts.ready;
       await new Promise(r => setTimeout(r, 200));
 
+      // ── A4 자동 맞춤 ──────────────────────────────────────────────
+      // 아이템이 많아 내용이 A4 높이(1123px)를 초과하면 CSS zoom으로 자동 축소.
+      // zoom은 레이아웃 흐름에 반영되므로 html2canvas가 축소된 크기로 캡처함.
+      // 결과: 항상 794×1123 비율 캔버스 → 좌우 공백 없이 A4 꽉 채움.
+      const naturalH = tempEl.scrollHeight;
+      const fitZoom  = naturalH > 1123 ? 1123 / naturalH : 1;
+      if (fitZoom < 1) {
+        tempEl.style.zoom = fitZoom.toFixed(5);
+        await new Promise(r => setTimeout(r, 80)); // 리플로우 대기
+      }
+
       const canvas = await html2canvas(tempEl, {
         scale: 2, useCORS: true, allowTaint: false,
         backgroundColor: S.bg, logging: false,
         windowWidth: 794
       });
 
+      if (fitZoom < 1) tempEl.style.zoom = ''; // zoom 리셋
+
       if (i > 0) pdf.addPage();
-      const ratio = Math.min(pdfW / canvas.width, pdfH / canvas.height);
-      const x = (pdfW - canvas.width  * ratio) / 2;
-      const y = (pdfH - canvas.height * ratio) / 2;
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, y, canvas.width * ratio, canvas.height * ratio);
+      // 항상 A4 너비를 꽉 채워 배치 (좌우 공백 없음)
+      const fillW = pdfW;
+      const fillH = canvas.height * (pdfW / canvas.width);
+      const fillY = fillH < pdfH ? (pdfH - fillH) / 2 : 0; // 짧으면 세로 가운데
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, fillY, fillW, fillH);
     }
 
     const titlePage = S.pages.find(p => p.title) || S.pages[0];
