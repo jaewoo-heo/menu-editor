@@ -99,7 +99,17 @@ function applyState(data) {
       if (!('headerImgSize' in p)) p.headerImgSize = 100;
       // 아이템 필드 마이그레이션
       p.items.forEach(item => {
-        if (!('imgPos'   in item)) item.imgPos   = 'center';
+        // imgPos(구) → imgX/imgY(신) 변환
+        if (!('imgX' in item)) {
+          const posMap = {
+            'top left':[0,0],'top center':[50,0],'top right':[100,0],
+            'center left':[0,50],'center':[50,50],'center right':[100,50],
+            'bottom left':[0,100],'bottom center':[50,100],'bottom right':[100,100],
+          };
+          const [x, y] = posMap[item.imgPos || 'center'] || [50, 50];
+          item.imgX = x; item.imgY = y;
+        }
+        if (!('imgY'     in item)) item.imgY    = 50;
         if (!('imgScale' in item)) item.imgScale = 100;
         if (!('imgSize'  in item)) item.imgSize  = 100;
         if (!('imgShape' in item)) item.imgShape = 'default';
@@ -239,9 +249,9 @@ const DEFAULT_STATE = {
       id: 2, type: 'menu', headerImg: null, headerImgSize: 100,
       category: 'MENU', title: 'COFFEE',
       subtitle: 'Our signature drinks', tagline: '', items: [
-        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
-        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
-        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
+        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, imgX: 50, imgY: 50, imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
+        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, imgX: 50, imgY: 50, imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
+        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, imgX: 50, imgY: 50, imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
       ]
     }
   ]
@@ -540,45 +550,72 @@ function renderItems() {
           <input value="${esc(item.price)}" oninput="setField(${item.id},'price',this.value)"></div>
         <div class="img-row">
           ${item.img
-            ? `<img class="img-thumb" src="${item.img}" id="thumb-${item.id}" style="object-position:${item.imgPos||'center'}">`
+            ? `<img class="img-thumb" src="${item.img}" id="thumb-${item.id}"
+                    style="object-fit:cover;object-position:${item.imgX??50}% ${item.imgY??50}%">`
             : `<div class="img-placeholder" id="thumb-${item.id}">☕</div>`}
           <button class="find-img-btn" onclick="openModal(${item.id})">🔍 이미지 찾기</button>
         </div>
         ${item.img ? `
         <div class="img-pos-section">
-          <div class="img-pos-label">사진 위치 (짤리는 부분 조정)</div>
-          <div class="img-pos-grid">
-            ${[['top left','↖'],['top center','↑'],['top right','↗'],
-               ['center left','←'],['center','●'],['center right','→'],
-               ['bottom left','↙'],['bottom center','↓'],['bottom right','↘']]
-              .map(([pos,icon]) =>
-                `<button class="img-pos-btn${(item.imgPos||'center')===pos?' active':''}"
-                         onclick="setField(${item.id},'imgPos','${pos}')"
-                         title="${pos}">${icon}</button>`
-              ).join('')}
+
+          <div class="img-ctrl-group">
+            <div class="img-pos-label" style="margin-bottom:4px">빠른 위치</div>
+            <div class="img-pos-grid">
+              ${[[0,0,'↖'],[50,0,'↑'],[100,0,'↗'],
+                 [0,50,'←'],[50,50,'●'],[100,50,'→'],
+                 [0,100,'↙'],[50,100,'↓'],[100,100,'↘']]
+                .map(([px,py,icon]) => {
+                  const active = (item.imgX??50)===px && (item.imgY??50)===py;
+                  return `<button class="img-pos-btn${active?' active':''}"
+                                   onclick="setPosPreset(${item.id},${px},${py})"
+                                   title="${px}% / ${py}%">${icon}</button>`;
+                }).join('')}
+            </div>
           </div>
-          <div class="img-zoom-row">
-            <span class="img-pos-label" style="white-space:nowrap">사진 확대 <span id="zoom-lbl-${item.id}" class="size-val">${item.imgScale||100}%</span></span>
-            <input type="range" min="100" max="200" value="${item.imgScale||100}" style="flex:1;accent-color:#e2a96f;cursor:pointer"
-                   oninput="setField(${item.id},'imgScale',+this.value);document.getElementById('zoom-lbl-${item.id}').textContent=this.value+'%'">
+
+          <div class="img-ctrl-group">
+            <div class="img-pos-label" style="margin-bottom:2px">정밀 위치 조정</div>
+            <div class="img-zoom-row">
+              <span class="img-axis-label">← X →</span>
+              <input type="range" min="0" max="100" value="${item.imgX??50}" id="pos-x-${item.id}"
+                     style="flex:1;accent-color:#e2a96f;cursor:pointer"
+                     oninput="setField(${item.id},'imgX',+this.value);
+                              document.getElementById('pos-x-lbl-${item.id}').textContent=this.value+'%';
+                              updateThumb(${item.id})">
+              <span id="pos-x-lbl-${item.id}" class="size-val" style="min-width:34px;text-align:right">${item.imgX??50}%</span>
+            </div>
+            <div class="img-zoom-row">
+              <span class="img-axis-label">↑ Y ↓</span>
+              <input type="range" min="0" max="100" value="${item.imgY??50}" id="pos-y-${item.id}"
+                     style="flex:1;accent-color:#e2a96f;cursor:pointer"
+                     oninput="setField(${item.id},'imgY',+this.value);
+                              document.getElementById('pos-y-lbl-${item.id}').textContent=this.value+'%';
+                              updateThumb(${item.id})">
+              <span id="pos-y-lbl-${item.id}" class="size-val" style="min-width:34px;text-align:right">${item.imgY??50}%</span>
+            </div>
           </div>
-          <div class="img-zoom-row">
-            <span class="img-pos-label" style="white-space:nowrap">프레임 크기 <span id="size-lbl-${item.id}" class="size-val">${item.imgSize||100}%</span></span>
-            <input type="range" min="40" max="160" value="${item.imgSize||100}" style="flex:1;accent-color:#6366f1;cursor:pointer"
-                   oninput="setField(${item.id},'imgSize',+this.value);document.getElementById('size-lbl-${item.id}').textContent=this.value+'%'">
+
+          <div class="img-ctrl-group">
+            <div class="img-zoom-row">
+              <span class="img-pos-label" style="white-space:nowrap">사진 크기 <span id="zoom-lbl-${item.id}" class="size-val">${item.imgScale||100}%</span></span>
+              <input type="range" min="20" max="200" value="${item.imgScale||100}" style="flex:1;accent-color:#e2a96f;cursor:pointer"
+                     oninput="setField(${item.id},'imgScale',+this.value);document.getElementById('zoom-lbl-${item.id}').textContent=this.value+'%'">
+            </div>
+            <div class="img-zoom-row">
+              <span class="img-pos-label" style="white-space:nowrap">프레임 크기 <span id="size-lbl-${item.id}" class="size-val">${item.imgSize||100}%</span></span>
+              <input type="range" min="40" max="160" value="${item.imgSize||100}" style="flex:1;accent-color:#6366f1;cursor:pointer"
+                     oninput="setField(${item.id},'imgSize',+this.value);document.getElementById('size-lbl-${item.id}').textContent=this.value+'%'">
+            </div>
           </div>
-          <div>
+
+          <div class="img-ctrl-group">
             <div class="img-pos-label" style="margin-bottom:4px">프레임 모양</div>
             <div class="img-shape-row">
-              ${[
-                ['default','기본','레이아웃 기본 모양'],
-                ['circle', '⬤', '원형'],
-                ['rounded','▢', '둥근 사각'],
-                ['square', '■', '직각 사각'],
-              ].map(([s, icon, label]) =>
-                `<button class="img-shape-btn${s==='circle'?' is-circle':s==='rounded'?' is-rounded':s==='square'?' is-square':''} ${(item.imgShape||'default')===s?'active':''}"
-                         onclick="setField(${item.id},'imgShape','${s}')" title="${label}">${icon}</button>`
-              ).join('')}
+              ${[['default','기본','기본'],['circle','⬤','원형'],['rounded','▢','둥근'],['square','■','직각']]
+                .map(([s,icon,label]) =>
+                  `<button class="img-shape-btn${s==='circle'?' is-circle':s==='rounded'?' is-rounded':s==='square'?' is-square':''} ${(item.imgShape||'default')===s?'active':''}"
+                           onclick="setField(${item.id},'imgShape','${s}')" title="${label}">${icon}<span class="shape-lbl">${label}</span></button>`
+                ).join('')}
             </div>
           </div>
         </div>` : ''}
@@ -621,6 +658,32 @@ function toggleBody(id) {
   document.getElementById('body-' + id)?.classList.toggle('open');
 }
 
+// 위치 프리셋 버튼 클릭 → imgX/imgY 동시 설정 + 슬라이더/버튼 UI 갱신
+function setPosPreset(id, x, y) {
+  for (const p of S.pages) {
+    const item = p.items.find(i => i.id === id);
+    if (!item) continue;
+    item.imgX = x; item.imgY = y;
+    renderPreview();
+    renderItems();   // 버튼 active 상태 + 슬라이더 값 갱신
+    scheduleSave();
+    return;
+  }
+}
+
+// 슬라이더 변경 시 에디터 썸네일만 빠르게 갱신 (renderItems 비용 없이)
+function updateThumb(id) {
+  for (const p of S.pages) {
+    const item = p.items.find(i => i.id === id);
+    if (!item) continue;
+    const thumb = document.getElementById('thumb-' + id);
+    if (thumb && thumb.tagName === 'IMG') {
+      thumb.style.objectPosition = `${item.imgX ?? 50}% ${item.imgY ?? 50}%`;
+    }
+    break;
+  }
+}
+
 function setField(id, key, val) {
   for (const p of S.pages) {
     const item = p.items.find(i => i.id === id);
@@ -631,8 +694,9 @@ function setField(id, key, val) {
         if (lbl) lbl.textContent = val || '(이름없음)';
       }
       renderPreview();
-      // 버튼 active 상태가 있는 필드는 에디터 카드 재렌더 (open 상태 보존됨)
-      if (key === 'imgPos' || key === 'imgShape') renderItems();
+      // 모양 버튼 active 상태 갱신을 위해 재렌더 (open 상태 보존됨)
+      // imgX/imgY는 setPosPreset 또는 슬라이더가 직접 UI 제어하므로 제외
+      if (key === 'imgShape') renderItems();
       scheduleSave();
       return;
     }
@@ -648,7 +712,7 @@ function addItem() {
     return;
   }
   const id = Date.now();
-  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true });
+  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, imgX: 50, imgY: 50, imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true });
   renderItems();
   renderPreview();
   saveState();
@@ -701,7 +765,9 @@ function imgTag(item, imgCls, phCls, phIcon = '☕') {
   if (!item.img) return `<div class="${phCls}">${phIcon}</div>`;
   const scale = item.imgScale && item.imgScale !== 100 ? item.imgScale / 100 : 1;
   const size  = item.imgSize  && item.imgSize  !== 100 ? item.imgSize  / 100 : 1;
-  const pos   = item.imgPos || 'center';
+  const x     = item.imgX ?? 50;
+  const y     = item.imgY ?? 50;
+  const pos   = `${x}% ${y}%`;
   // 내부 줌: img에 transform scale (overflow:hidden으로 클립)
   const t = scale !== 1 ? `transform:scale(${scale});transform-origin:${pos};` : '';
   // 프레임 모양: 'default'이면 CSS 클래스가 정의한 border-radius 그대로 사용
