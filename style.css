@@ -302,6 +302,16 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 /* 확대/축소 슬라이더 행 */
 .img-zoom-row{display:flex;align-items:center;gap:8px;margin-top:2px}
 
+/* 프레임 모양 선택 버튼 */
+.img-shape-row{display:flex;gap:5px}
+.img-shape-btn{flex:1;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:6px 0;font-size:14px;cursor:pointer;transition:all .15s;text-align:center;line-height:1}
+.img-shape-btn:hover{background:#e5e7eb}
+.img-shape-btn.active{background:#e2a96f;border-color:#d4924f;color:#fff}
+/* 버튼 자체의 border-radius로 모양 힌트 */
+.img-shape-btn.is-circle{border-radius:50%}
+.img-shape-btn.is-rounded{border-radius:10px}
+.img-shape-btn.is-square{border-radius:2px}
+
 /* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:flex;align-items:center;justify-content:center}
 .modal{background:#fff;border-radius:14px;padding:24px;width:580px;max-height:82vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
