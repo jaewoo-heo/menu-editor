@@ -293,24 +293,27 @@ body{font-family:'Inter',sans-serif;background:#1e1e2e;color:#333;height:100vh;o
 .lm,.lk,.lmin{position:relative}
 
 /* ── 이미지 위치·줌 선택기 ── */
-.img-pos-section{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.img-pos-section{margin-top:8px;display:flex;flex-direction:column;gap:0}
+.img-ctrl-group{padding:6px 0;border-bottom:1px solid #f0f0f0}
+.img-ctrl-group:last-child{border-bottom:none}
 .img-pos-label{font-size:11px;color:#666}
 .img-pos-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;width:78px}
 .img-pos-btn{background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;padding:5px 0;font-size:12px;cursor:pointer;transition:all .15s;line-height:1;text-align:center}
 .img-pos-btn:hover{background:#e5e7eb}
 .img-pos-btn.active{background:#e2a96f;border-color:#d4924f;color:#fff}
-/* 확대/축소 슬라이더 행 */
-.img-zoom-row{display:flex;align-items:center;gap:8px;margin-top:2px}
+/* 슬라이더 행 */
+.img-zoom-row{display:flex;align-items:center;gap:6px;margin-top:3px}
+.img-axis-label{font-size:10px;color:#aaa;white-space:nowrap;min-width:30px;text-align:center}
 
 /* 프레임 모양 선택 버튼 */
-.img-shape-row{display:flex;gap:5px}
-.img-shape-btn{flex:1;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:6px 0;font-size:14px;cursor:pointer;transition:all .15s;text-align:center;line-height:1}
+.img-shape-row{display:flex;gap:4px}
+.img-shape-btn{flex:1;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:5px 0;font-size:13px;cursor:pointer;transition:all .15s;text-align:center;line-height:1;display:flex;flex-direction:column;align-items:center;gap:2px}
 .img-shape-btn:hover{background:#e5e7eb}
 .img-shape-btn.active{background:#e2a96f;border-color:#d4924f;color:#fff}
-/* 버튼 자체의 border-radius로 모양 힌트 */
 .img-shape-btn.is-circle{border-radius:50%}
 .img-shape-btn.is-rounded{border-radius:10px}
 .img-shape-btn.is-square{border-radius:2px}
+.shape-lbl{font-size:9px;opacity:.7;line-height:1}
 
 /* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:flex;align-items:center;justify-content:center}
