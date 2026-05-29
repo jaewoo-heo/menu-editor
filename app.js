@@ -101,6 +101,7 @@ function applyState(data) {
       p.items.forEach(item => {
         if (!('imgPos'   in item)) item.imgPos   = 'center';
         if (!('imgScale' in item)) item.imgScale = 100;
+        if (!('imgSize'  in item)) item.imgSize  = 100;
         if (!('imgShape' in item)) item.imgShape = 'default';
       });
     });
@@ -238,9 +239,9 @@ const DEFAULT_STATE = {
       id: 2, type: 'menu', headerImg: null, headerImgSize: 100,
       category: 'MENU', title: 'COFFEE',
       subtitle: 'Our signature drinks', tagline: '', items: [
-        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, imgPos: 'center', imgScale: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
-        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, imgPos: 'center', imgScale: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
-        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, imgPos: 'center', imgScale: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
+        { id: 10, name: 'Oat Cold Brew',  desc: '콜드 브루의 풍미와 달콤한 오트 음료가 어우러진 냉음 커피.', price: '7,000', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
+        { id: 11, name: 'Shakerato',      desc: '얼음과 함께 쉐이킹하여 진한 에스프레소와 어우러진 달콤한 음료.', price: '8,000', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
+        { id: 12, name: 'Nitro',          desc: '부드러운 콜드 크림과 묵직한 질감이 어우러진 음료.', price: '8,500', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true },
       ]
     }
   ]
@@ -513,6 +514,11 @@ function renderItems() {
     return;
   }
   if (addBtn) addBtn.style.display = '';
+
+  // 현재 열린 아이템 body id 저장 → 재렌더 후 복원
+  const openIds = new Set(
+    [...container.querySelectorAll('.item-body.open')].map(el => el.id.replace('body-', ''))
+  );
   container.innerHTML = '';
 
   p.items.forEach((item, i) => {
@@ -552,9 +558,14 @@ function renderItems() {
               ).join('')}
           </div>
           <div class="img-zoom-row">
-            <span class="img-pos-label" style="white-space:nowrap">확대 <span id="zoom-lbl-${item.id}" class="size-val">${item.imgScale||100}%</span></span>
+            <span class="img-pos-label" style="white-space:nowrap">사진 확대 <span id="zoom-lbl-${item.id}" class="size-val">${item.imgScale||100}%</span></span>
             <input type="range" min="100" max="200" value="${item.imgScale||100}" style="flex:1;accent-color:#e2a96f;cursor:pointer"
                    oninput="setField(${item.id},'imgScale',+this.value);document.getElementById('zoom-lbl-${item.id}').textContent=this.value+'%'">
+          </div>
+          <div class="img-zoom-row">
+            <span class="img-pos-label" style="white-space:nowrap">프레임 크기 <span id="size-lbl-${item.id}" class="size-val">${item.imgSize||100}%</span></span>
+            <input type="range" min="40" max="160" value="${item.imgSize||100}" style="flex:1;accent-color:#6366f1;cursor:pointer"
+                   oninput="setField(${item.id},'imgSize',+this.value);document.getElementById('size-lbl-${item.id}').textContent=this.value+'%'">
           </div>
           <div>
             <div class="img-pos-label" style="margin-bottom:4px">프레임 모양</div>
@@ -592,6 +603,12 @@ function renderItems() {
     container.appendChild(div);
   });
 
+  // 열린 상태 복원 (setField → renderItems 재호출 시 카드가 닫히지 않도록)
+  openIds.forEach(id => {
+    const body = document.getElementById('body-' + id);
+    if (body) body.classList.add('open');
+  });
+
   if (p.items.length >= MAX_ITEMS) {
     const notice = document.createElement('div');
     notice.className = 'page-limit-notice';
@@ -614,7 +631,9 @@ function setField(id, key, val) {
         if (lbl) lbl.textContent = val || '(이름없음)';
       }
       renderPreview();
-      scheduleSave();   // 키 입력 → 디바운스
+      // 버튼 active 상태가 있는 필드는 에디터 카드 재렌더 (open 상태 보존됨)
+      if (key === 'imgPos' || key === 'imgShape') renderItems();
+      scheduleSave();
       return;
     }
   }
@@ -629,7 +648,7 @@ function addItem() {
     return;
   }
   const id = Date.now();
-  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, imgPos: 'center', imgScale: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true });
+  p.items.push({ id, name: '새 메뉴', desc: '설명을 입력하세요.', price: '0', img: null, imgPos: 'center', imgScale: 100, imgSize: 100, imgShape: 'default', showName: true, showDesc: true, showPrice: true });
   renderItems();
   renderPreview();
   saveState();
@@ -681,14 +700,17 @@ const IMG_SHAPE_RADIUS = { circle: '50%', rounded: '16px', square: '0', wide: '8
 function imgTag(item, imgCls, phCls, phIcon = '☕') {
   if (!item.img) return `<div class="${phCls}">${phIcon}</div>`;
   const scale = item.imgScale && item.imgScale !== 100 ? item.imgScale / 100 : 1;
+  const size  = item.imgSize  && item.imgSize  !== 100 ? item.imgSize  / 100 : 1;
   const pos   = item.imgPos || 'center';
-  const t     = scale !== 1 ? `transform:scale(${scale});transform-origin:${pos};` : '';
-
+  // 내부 줌: img에 transform scale (overflow:hidden으로 클립)
+  const t = scale !== 1 ? `transform:scale(${scale});transform-origin:${pos};` : '';
   // 프레임 모양: 'default'이면 CSS 클래스가 정의한 border-radius 그대로 사용
-  const shape = item.imgShape && item.imgShape !== 'default' ? item.imgShape : null;
+  const shape      = item.imgShape && item.imgShape !== 'default' ? item.imgShape : null;
   const shapeStyle = shape ? `border-radius:${IMG_SHAPE_RADIUS[shape] || '0'};` : '';
+  // 프레임 크기: CSS zoom 으로 박스 자체를 축소/확대 (레이아웃 흐름에 반영됨)
+  const sizeStyle  = size !== 1 ? `zoom:${size};` : '';
 
-  return `<div class="${imgCls}" style="overflow:hidden;${shapeStyle}">` +
+  return `<div class="${imgCls}" style="overflow:hidden;${shapeStyle}${sizeStyle}">` +
     `<img src="${item.img}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:${pos};display:block;${t}">` +
     `</div>`;
 }
