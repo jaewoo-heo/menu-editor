@@ -280,6 +280,18 @@ const COVER_CSS = {
   coffee:'cover-coffee', modern:'cover-modern', elegant:'cover-elegant',
   chalk:'cover-chalk',   bistro:'cover-bistro', minimal:'cover-minimal'
 };
+// 레이아웃 CSS 클래스 매핑
+const LAYOUT_CLS = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' };
+// 레이아웃별 .m-img 기본 픽셀 크기 — imgSize 스케일링에 사용
+// CSS zoom 대신 명시적 width/height 로 제어해야 html2canvas 가 정확히 캡처함
+const BASE_IMG_DIMS = {
+  lc:   { w: 130, h: 130 },
+  lm:   { w: null, h: 150 }, // width 는 100% (카드 전체 폭)
+  le:   { w: 86,  h: 86  },
+  lk:   { w: 90,  h: 90  },
+  lb:   { w: 100, h: 100 },
+  lmin: { w: 80,  h: 80  },
+};
 
 function initSwatches() {
   const c = document.getElementById('bgSwatches');
@@ -745,7 +757,7 @@ function renderPreview() {
     el.className = 'cover-page';
     el.innerHTML = tplCover(p);
   } else {
-    const cls = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' }[S.layout] || 'lc';
+    const cls = LAYOUT_CLS[S.layout] || 'lc';
     el.className = cls;
     if (S.layout === 'coffee')  el.innerHTML = tplCoffee(p);
     if (S.layout === 'modern')  el.innerHTML = tplModern(p);
@@ -770,11 +782,18 @@ function imgTag(item, imgCls, phCls, phIcon = '☕') {
   const pos   = `${x}% ${y}%`;
   // 내부 줌: img에 transform scale (overflow:hidden으로 클립)
   const t = scale !== 1 ? `transform:scale(${scale});transform-origin:${pos};` : '';
-  // 프레임 모양: 'default'이면 CSS 클래스가 정의한 border-radius 그대로 사용
+  // 프레임 모양
   const shape      = item.imgShape && item.imgShape !== 'default' ? item.imgShape : null;
   const shapeStyle = shape ? `border-radius:${IMG_SHAPE_RADIUS[shape] || '0'};` : '';
-  // 프레임 크기: CSS zoom 으로 박스 자체를 축소/확대 (레이아웃 흐름에 반영됨)
-  const sizeStyle  = size !== 1 ? `zoom:${size};` : '';
+  // 프레임 크기: CSS zoom 대신 명시적 width/height 로 제어
+  // → html2canvas 는 zoom 을 자식 요소에서 정확히 처리하지 못하므로 px 값으로 직접 지정
+  let sizeStyle = '';
+  if (size !== 1) {
+    const base = BASE_IMG_DIMS[LAYOUT_CLS[S.layout] || 'lc'];
+    sizeStyle = base.w
+      ? `width:${Math.round(base.w * size)}px;height:${Math.round(base.h * size)}px;`
+      : `height:${Math.round(base.h * size)}px;`; // lm: 너비는 100% 유지
+  }
 
   return `<div class="${imgCls}" style="overflow:hidden;${shapeStyle}${sizeStyle}">` +
     `<img src="${item.img}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:${pos};display:block;${t}">` +
@@ -1239,7 +1258,7 @@ async function exportPDF() {
   offscreen.appendChild(tempEl);
   document.body.appendChild(offscreen);
 
-  const clsMap = { coffee:'lc', modern:'lm', elegant:'le', chalk:'lk', bistro:'lb', minimal:'lmin' };
+  const clsMap = LAYOUT_CLS;
   const tplMap = { coffee:tplCoffee, modern:tplModern, elegant:tplElegant, chalk:tplChalk, bistro:tplBistro, minimal:tplMinimal };
 
   try {
