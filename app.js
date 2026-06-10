@@ -1300,23 +1300,44 @@ async function exportPDF() {
       await new Promise(r => setTimeout(r, 200));
 
       // ── A4 자동 맞춤 ──────────────────────────────────────────────
-      // 아이템이 많아 내용이 A4 높이(1123px)를 초과하면 CSS zoom으로 자동 축소.
-      // zoom은 레이아웃 흐름에 반영되므로 html2canvas가 축소된 크기로 캡처함.
-      // 결과: 항상 794×1123 비율 캔버스 → 좌우 공백 없이 A4 꽉 채움.
+      // 콘텐츠가 A4 높이(1123px) 초과 시 세로 방향만 압축(scaleY).
+      // ※ CSS zoom 은 html2canvas 가 지원하지 않아 잘림·어긋남 발생.
+      //   CSS transform 은 html2canvas 가 정상 처리하므로 scaleY 방식 사용.
+      // 래퍼 div(794×압축높이)로 감싸 html2canvas 캡처 루트를 명확히 지정.
       const naturalH = tempEl.scrollHeight;
       const fitZoom  = naturalH > 1123 ? 1123 / naturalH : 1;
+
+      let captureEl = tempEl;
+      let wrapper   = null;
+
       if (fitZoom < 1) {
-        tempEl.style.zoom = fitZoom.toFixed(5);
-        await new Promise(r => setTimeout(r, 80)); // 리플로우 대기
+        const scaledH = Math.ceil(naturalH * fitZoom);
+        wrapper = document.createElement('div');
+        wrapper.style.cssText =
+          `width:794px;height:${scaledH}px;overflow:hidden;position:relative;background:${S.bg};`;
+        offscreen.appendChild(wrapper);
+        wrapper.appendChild(tempEl);
+
+        // scaleY: 너비는 유지(좌우 공백 없음), 높이만 압축
+        tempEl.style.transformOrigin = '0 0';
+        tempEl.style.transform = `scaleY(${fitZoom.toFixed(5)})`;
+        await new Promise(r => setTimeout(r, 150)); // 트랜스폼 안정화 대기
+        captureEl = wrapper;
       }
 
-      const canvas = await html2canvas(tempEl, {
+      const canvas = await html2canvas(captureEl, {
         scale: 2, useCORS: true, allowTaint: false,
         backgroundColor: S.bg, logging: false,
         windowWidth: 794
       });
 
-      if (fitZoom < 1) tempEl.style.zoom = ''; // zoom 리셋
+      // 래퍼 정리: tempEl 을 offscreen 으로 복귀, wrapper 제거
+      if (wrapper) {
+        tempEl.style.transform = '';
+        tempEl.style.transformOrigin = '';
+        offscreen.appendChild(tempEl);
+        offscreen.removeChild(wrapper);
+      }
 
       if (i > 0) pdf.addPage();
       // 항상 A4 너비를 꽉 채워 배치 (좌우 공백 없음)
