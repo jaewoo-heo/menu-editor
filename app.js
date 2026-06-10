@@ -134,8 +134,13 @@ function scheduleSave() {
 function saveState() {
   clearTimeout(_saveTimer);
   // localStorage에만 자동 저장 — 서버 저장은 '☁️ 서버 저장' 버튼으로만
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch {}
-  showToast('✓ 저장됨', 2000);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
+    showToast('✓ 저장됨', 2000);
+  } catch (e) {
+    // 용량 초과(이미지 포함 시 발생 가능) — 사용자에게 명시적으로 알림
+    showToast('⚠️ 로컬 저장 실패 (용량 초과). 서버 저장을 이용하세요.', 4000);
+  }
 }
 
 function loadState() {
@@ -338,7 +343,7 @@ function onSize(key, input) {
   const labelMap = { title:'vTitle', cat:'vCat', sub:'vSub', name:'vName', desc:'vDesc', price:'vPrice' };
   document.getElementById(labelMap[key]).textContent = input.value;
   renderPreview();
-  saveState();
+  scheduleSave(); // 슬라이더 연속 입력 → 디바운스로 저장 횟수 절감
 }
 
 // ── 페이지 관리 ──────────────────────────────────────────────────
@@ -346,7 +351,7 @@ function curPage() { return S.pages[S.cur]; }
 
 function addPage() {
   const id = Date.now();
-  S.pages.push({ id, type: 'menu', category: 'MENU', title: '', subtitle: '', tagline: '', items: [] });
+  S.pages.push({ id, type: 'menu', headerImg: null, headerImgSize: 100, category: 'MENU', title: '', subtitle: '', tagline: '', items: [] });
   S.cur = S.pages.length - 1;
   renderAll();
   saveState();
@@ -405,11 +410,12 @@ function syncUIFromState() {
 function renderPageTabs() {
   const el = document.getElementById('pageTabs');
   el.innerHTML = '';
+  let menuSeq = 0;
   S.pages.forEach((p, i) => {
     const tab = document.createElement('div');
     tab.className = 'page-tab' + (i === S.cur ? ' active' : '');
     tab.onclick = () => setPage(i);
-    tab.innerHTML = p.type === 'cover' ? '📖 표지' : `페이지 ${i}`;
+    tab.innerHTML = p.type === 'cover' ? '📖 표지' : `메뉴 ${++menuSeq}`;
 
     // 복사 버튼
     const dup = document.createElement('span');
@@ -437,7 +443,7 @@ function duplicatePage(idx, e) {
   // 깊은 복사 후 id만 새로 부여
   const copy = JSON.parse(JSON.stringify(src));
   copy.id = Date.now();
-  copy.items = copy.items.map(it => ({ ...it, id: Date.now() + Math.random() }));
+  copy.items = copy.items.map((it, i) => ({ ...it, id: Date.now() + i + 1 }));
   S.pages.splice(idx + 1, 0, copy);
   S.cur = idx + 1;
   renderAll();
@@ -1176,6 +1182,15 @@ function handleUpload(input) {
     const origKB = Math.round(file.size / 1024);
     const compKB = Math.round(compressed.length * 0.75 / 1024);
     console.log(`이미지 압축: ${origKB}KB → ${compKB}KB (${w}×${h}, ${isPng?'PNG':'JPEG'})`);
+
+    // PNG 300KB 초과 시 경고 — 여러 장 사용 시 로컬 저장 용량(보통 5MB) 초과 위험
+    if (isPng && compKB > 300) {
+      document.querySelector('.upload-area').insertAdjacentHTML('beforeend',
+        `<div style="margin-top:8px;font-size:11px;color:#b45309;background:#fef3c7;border-radius:6px;padding:6px 10px">
+           ⚠️ PNG 용량이 ${compKB}KB입니다. 이미지가 많으면 저장 실패할 수 있습니다.<br>불투명 이미지라면 JPG로 변환 후 업로드를 권장합니다.
+         </div>`
+      );
+    }
 
     pendingImg = { type: 'b64', url: compressed };
     // PNG 미리보기: 투명 체크무늬 배경으로 투명도 시각화
